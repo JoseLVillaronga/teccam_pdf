@@ -36,6 +36,8 @@ HTTP_PORT=5018
 
 ## Instalación
 
+### Instalación Automática (Recomendada)
+
 1. Clonar el repositorio:
 ```bash
 git clone <repositorio>
@@ -52,6 +54,36 @@ El instalador:
 - Instala las dependencias
 - Configura el servicio systemd
 - Inicia la aplicación
+
+### Instalación Manual
+
+1. Clonar el repositorio:
+```bash
+git clone <repositorio>
+cd teccam_pdf
+```
+
+2. Crear y activar el entorno virtual:
+```bash
+python -m venv venv
+source ./venv/bin/activate
+```
+
+3. Instalar dependencias:
+```bash
+pip install -r requirements.txt
+```
+
+4. Configurar variables de entorno:
+```bash
+cp .env.example .env
+# Editar .env con tus configuraciones
+```
+
+5. Ejecutar la aplicación:
+```bash
+python app.py
+```
 
 ## Uso
 

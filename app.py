@@ -19,6 +19,7 @@ MONGO_URI = f"mongodb://{os.getenv('MONGO_USER')}:{os.getenv('MONGO_PASS')}@{os.
 client = MongoClient(MONGO_URI)
 db = client.teccam_pdf
 collection = db.documentos
+posiciones_collection = db.posiciones_lectura
 
 def es_pdf(url):
     """Determina si una URL corresponde a un archivo PDF."""
@@ -26,14 +27,16 @@ def es_pdf(url):
 
 @app.route('/', methods=['GET'])
 def index():
-    # Si hay una URL en los parámetros GET, la pasamos a la plantilla
+    # Si hay una URL y usuario en los parámetros GET, los pasamos a la plantilla
     url = request.args.get('url', '')
-    return render_template('index.html', url=url)
+    usuario = request.args.get('usuario', '')
+    return render_template('index.html', url=url, usuario=usuario)
 
 @app.route('/leer', methods=['GET'])
 def leer():
     """Página para leer documentos guardados."""
-    return render_template('leer.html')
+    usuario = request.args.get('usuario', '')
+    return render_template('leer.html', usuario=usuario)
 
 @app.route('/api/buscar', methods=['GET'])
 def buscar_documentos():
@@ -41,6 +44,7 @@ def buscar_documentos():
     titulo = request.args.get('titulo', '')
     autor = request.args.get('autor', '')
     tema = request.args.get('tema', '')
+    usuario = request.args.get('usuario', '')
     
     # Construir la consulta
     query = {}
@@ -50,6 +54,17 @@ def buscar_documentos():
         query['autor'] = {'$regex': autor, '$options': 'i'}
     if tema:
         query['tema'] = {'$regex': tema, '$options': 'i'}
+    
+    # Filtrar documentos según el usuario
+    if usuario:
+        # Si hay usuario, mostrar documentos públicos o del usuario
+        query['$or'] = [
+            {'usuario': {'$exists': False}},  # documentos públicos
+            {'usuario': usuario}              # documentos del usuario
+        ]
+    else:
+        # Si no hay usuario, mostrar solo documentos públicos
+        query['usuario'] = {'$exists': False}
     
     # Buscar documentos
     documentos = list(collection.find(
@@ -92,6 +107,57 @@ def obtener_documento(id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/posicion/<documento_id>', methods=['GET', 'POST'])
+def manejar_posicion(documento_id):
+    """API para guardar y obtener la posición de lectura de un documento."""
+    usuario = request.args.get('usuario')
+    
+    # Solo procesar si hay usuario definido
+    if not usuario:
+        return jsonify({'error': 'Usuario no definido'}), 400
+        
+    try:
+        if request.method == 'POST':
+            # Guardar posición
+            posicion = request.json.get('posicion')
+            if posicion is None:
+                return jsonify({'error': 'Posición no especificada'}), 400
+                
+            # Actualizar o insertar posición
+            posiciones_collection.update_one(
+                {'documento_id': ObjectId(documento_id), 'usuario': usuario},
+                {
+                    '$set': {
+                        'posicion': posicion,
+                        'ultima_actualizacion': datetime.datetime.utcnow()
+                    }
+                },
+                upsert=True
+            )
+            
+            return jsonify({
+                'status': 'success',
+                'message': 'Posición guardada exitosamente'
+            })
+            
+        else:  # GET
+            # Obtener última posición
+            posicion = posiciones_collection.find_one(
+                {'documento_id': ObjectId(documento_id), 'usuario': usuario}
+            )
+            
+            if posicion:
+                return jsonify({
+                    'posicion': posicion['posicion']
+                })
+            else:
+                return jsonify({
+                    'posicion': 0  # Posición por defecto si no hay guardada
+                })
+                
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/procesar', methods=['POST'])
 def procesar():
     try:
@@ -99,6 +165,8 @@ def procesar():
         titulo = request.form['titulo']
         autor = request.form['autor']
         tema = request.form['tema']
+        usuario = request.form.get('usuario', '')
+        es_publico = request.form.get('es_publico') == 'true'
 
         # Extraer el texto según el tipo de URL
         if es_pdf(url):
@@ -115,6 +183,10 @@ def procesar():
             'texto': resultado['texto'],
             'fecha_creacion': datetime.datetime.utcnow()
         }
+
+        # Solo agregar usuario si no es público y se proporcionó un usuario
+        if not es_publico and usuario:
+            documento['usuario'] = usuario
 
         # Guardar en MongoDB
         collection.insert_one(documento)

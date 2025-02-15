@@ -55,6 +55,14 @@
                                placeholder="Tema del documento">
                     </div>
 
+                    {% if usuario %}
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="esPublico" name="es_publico">
+                        <label class="form-check-label" for="esPublico">Hacer documento público</label>
+                        <input type="hidden" name="usuario" value="{{ usuario }}">
+                    </div>
+                    {% endif %}
+
                     <button type="submit" class="btn btn-primary">Procesar Documento</button>
                 </form>
             </div>
@@ -87,6 +95,11 @@
 
             try {
                 const formData = new FormData(this);
+                const esPublicoCheckbox = document.getElementById('esPublico');
+                if (esPublicoCheckbox) {
+                    formData.set('es_publico', esPublicoCheckbox.checked.toString());
+                }
+                
                 const response = await fetch('/procesar', {
                     method: 'POST',
                     body: formData

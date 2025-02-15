@@ -63,22 +63,32 @@ def buscar_documentos():
     
     return jsonify(documentos)
 
-@app.route('/api/documento/<id>', methods=['GET'])
+@app.route('/api/documento/<id>', methods=['GET', 'DELETE'])
 def obtener_documento(id):
-    """API para obtener un documento específico por ID."""
+    """API para obtener o eliminar un documento específico por ID."""
     try:
-        documento = collection.find_one({'_id': ObjectId(id)})
-        if documento:
-            # Convertir el Markdown a HTML
-            html_content = markdown2.markdown(documento['texto'])
-            return jsonify({
-                'contenido_html': html_content,
-                'titulo': documento['titulo'],
-                'autor': documento['autor'],
-                'tema': documento['tema']
-            })
-        else:
-            return jsonify({'error': 'Documento no encontrado'}), 404
+        if request.method == 'DELETE':
+            resultado = collection.delete_one({'_id': ObjectId(id)})
+            if resultado.deleted_count > 0:
+                return jsonify({
+                    'status': 'success',
+                    'message': 'Documento eliminado exitosamente'
+                })
+            else:
+                return jsonify({'error': 'Documento no encontrado'}), 404
+        else:  # GET
+            documento = collection.find_one({'_id': ObjectId(id)})
+            if documento:
+                # Convertir el Markdown a HTML
+                html_content = markdown2.markdown(documento['texto'])
+                return jsonify({
+                    'contenido_html': html_content,
+                    'titulo': documento['titulo'],
+                    'autor': documento['autor'],
+                    'tema': documento['tema']
+                })
+            else:
+                return jsonify({'error': 'Documento no encontrado'}), 404
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

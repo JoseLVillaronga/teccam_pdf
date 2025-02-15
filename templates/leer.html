@@ -36,9 +36,26 @@
             margin-bottom: 10px;
             cursor: pointer;
             transition: background-color 0.3s;
+            position: relative;
         }
         .document-item:hover {
             background-color: #444;
+        }
+        .delete-btn {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: #dc3545;
+            border: none;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            z-index: 10;
+        }
+        .delete-btn:hover {
+            background-color: #bb2d3b;
         }
         .form-control {
             background-color: #333;
@@ -151,8 +168,13 @@
                         const docElement = document.createElement('div');
                         docElement.className = 'document-item';
                         docElement.innerHTML = `
-                            <h4>${doc.titulo}</h4>
-                            <p>Autor: ${doc.autor} | Tema: ${doc.tema}</p>
+                            <div style="margin-right: 50px;">
+                                <h4>${doc.titulo}</h4>
+                                <p>Autor: ${doc.autor} | Tema: ${doc.tema}</p>
+                            </div>
+                            <button class="delete-btn" onclick="event.stopPropagation(); borrarDocumento('${doc._id}')">
+                                Borrar
+                            </button>
                         `;
                         docElement.onclick = () => cargarDocumento(doc._id);
                         documentList.appendChild(docElement);
@@ -161,6 +183,26 @@
                     document.getElementById('documentList').style.display = 'block';
                     document.getElementById('documentContent').style.display = 'none';
                 });
+        }
+
+        function borrarDocumento(id) {
+            if (confirm('¿Estás seguro de que deseas borrar este documento?')) {
+                fetch(`/api/documento/${id}`, {
+                    method: 'DELETE'
+                })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.status === 'success') {
+                        // Actualizar la lista de documentos
+                        buscarDocumentos();
+                    } else {
+                        alert('Error al borrar el documento: ' + result.error);
+                    }
+                })
+                .catch(error => {
+                    alert('Error al borrar el documento: ' + error);
+                });
+            }
         }
 
         function cargarDocumento(id) {

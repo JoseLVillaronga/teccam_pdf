@@ -1,0 +1,9 @@
+flask==3.0.0
+python-dotenv==1.0.0
+pymongo==4.6.1
+requests==2.31.0
+beautifulsoup4==4.12.2
+html2text==2020.1.16
+PyMuPDF>=1.24.10
+pymupdf4llm==0.0.17
+markdown2==2.4.12

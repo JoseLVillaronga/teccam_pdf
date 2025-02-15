@@ -16,6 +16,9 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - Interfaz de búsqueda y lectura
 - Diseño responsive
 - Modo oscuro para lectura confortable
+- Sistema de documentos públicos/privados
+- Marcadores de posición de lectura
+- Integración con sistemas de autenticación externos
 
 ## Requisitos del Sistema
 - Python 3.12 o superior
@@ -26,13 +29,22 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 ## Configuración
 
 ### Variables de Entorno (.env)
+Crear un archivo `.env` basado en `.env.example` con la siguiente configuración:
+
 ```bash
-MONGO_USER=usuario
-MONGO_PASS=contraseña
+MONGO_USER=user
+MONGO_PASS=password
 MONGO_HOST=host
-HTTP_HOST=0.0.0.0
+HTTP_HOST=localhost
 HTTP_PORT=5018
 ```
+
+Descripción de las variables:
+- `MONGO_USER`: Usuario de MongoDB
+- `MONGO_PASS`: Contraseña de MongoDB
+- `MONGO_HOST`: Host de MongoDB
+- `HTTP_HOST`: Host para el servidor web (localhost para desarrollo)
+- `HTTP_PORT`: Puerto para el servidor web
 
 ## Instalación
 
@@ -88,21 +100,26 @@ python app.py
 ## Uso
 
 ### Extracción de Documentos
-1. Acceder a `http://localhost:5018`
+1. Acceder a `http://localhost:5018` (opcionalmente con `?usuario=nombre_usuario`)
 2. Ingresar la URL del documento (PDF o página web)
 3. Completar metadatos (título, autor, tema)
-4. Procesar el documento
+4. Si hay usuario definido, elegir si el documento será público
+5. Procesar el documento
 
 También se puede pre-cargar una URL:
 ```
-http://localhost:5018/?url=https://ejemplo.com/documento.pdf
+http://localhost:5018/?url=https://ejemplo.com/documento.pdf&usuario=nombre_usuario
 ```
 
 ### Lectura de Documentos
-1. Acceder a `http://localhost:5018/leer`
+1. Acceder a `http://localhost:5018/leer` (opcionalmente con `?usuario=nombre_usuario`)
 2. Usar los filtros de búsqueda (título, autor, tema)
 3. Seleccionar un documento para leer
 4. El contenido se muestra en formato legible con fondo oscuro
+5. Con usuario definido:
+   - Ver documentos públicos y propios privados
+   - Doble click en el texto para guardar posición de lectura
+   - Al reabrir, se restaura automáticamente la última posición
 
 ## Estructura del Proyecto
 ```
@@ -154,6 +171,7 @@ journalctl --user -u teccam_pdf.service -f
 - `/api/buscar`: API de búsqueda de documentos
 - `/api/documento/<id>`: API para obtener documento específico
 - `/procesar`: Endpoint de procesamiento de documentos
+- `/api/posicion/<documento_id>`: API para gestionar posiciones de lectura
 
 ## Decisiones Técnicas
 
@@ -165,11 +183,46 @@ journalctl --user -u teccam_pdf.service -f
 - Diseño responsive usando Bootstrap 5
 - Modo oscuro para lectura prolongada
 - Procesamiento asíncrono para mejor experiencia de usuario
+- Notificaciones toast para feedback de acciones
+- Control de posición de lectura mediante doble click
 
 ### Seguridad
 - Servicio ejecutado a nivel usuario (no root)
 - Variables sensibles en archivo .env
 - Validación de entradas de usuario
+
+## Estructura de Datos
+
+### Colecciones MongoDB
+- **documentos**: Almacena los documentos procesados
+  - Campos estándar: título, autor, tema, texto, fecha_creación
+  - Campo opcional 'usuario' para documentos privados
+
+- **posiciones_lectura**: Almacena marcadores de posición
+  - documento_id: Referencia al documento
+  - usuario: Propietario del marcador
+  - posicion: Valor del scroll
+  - ultima_actualizacion: Timestamp
+
+## Integración con Sistemas Externos
+
+### Sistema de Usuarios
+La aplicación está diseñada para integrarse con sistemas de autenticación externos:
+- Acepta parámetro `usuario` vía GET en todas las rutas
+- No requiere login propio
+- Gestiona documentos públicos y privados
+- Mantiene marcadores de lectura por usuario
+
+### Ejemplos de Integración
+```
+# Acceso como usuario específico
+http://localhost:5018/?usuario=nombre_usuario
+http://localhost:5018/leer?usuario=nombre_usuario
+
+# Acceso público (sin usuario)
+http://localhost:5018/
+http://localhost:5018/leer
+```
 
 ## Mantenimiento
 

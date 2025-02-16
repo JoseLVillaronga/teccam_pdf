@@ -37,6 +37,7 @@ MONGO_PASS=password
 MONGO_HOST=host
 HTTP_HOST=localhost
 HTTP_PORT=5018
+EDITORES=editor1,editor2,editor3
 ```
 
 Descripción de las variables:
@@ -45,6 +46,37 @@ Descripción de las variables:
 - `MONGO_HOST`: Host de MongoDB
 - `HTTP_HOST`: Host para el servidor web (localhost para desarrollo)
 - `HTTP_PORT`: Puerto para el servidor web
+- `EDITORES`: Lista de usuarios con permisos de edición, separados por comas
+
+## Sistema de Permisos
+
+### Tipos de Documentos
+- **Documentos Públicos**: Visibles para todos los usuarios
+- **Documentos Privados**: Solo visibles para su propietario
+
+### Roles de Usuario
+1. **Usuario Normal**
+   - Puede ver todos los documentos públicos
+   - Puede ver sus documentos privados
+   - Puede borrar solo sus propios documentos
+   - Identificación visual de documentos propios vs. públicos
+
+2. **Usuario Editor**
+   - Todos los permisos de usuario normal
+   - Puede borrar cualquier documento (público o privado)
+   - Definido en la variable de entorno `EDITORES`
+
+### Gestión de Permisos
+- La interfaz muestra badges indicando si un documento es "Público" o "Propio"
+- El botón de borrado solo aparece cuando el usuario tiene permisos
+- La verificación de permisos se realiza tanto en frontend como en backend
+- Los editores se definen en el archivo `.env` mediante la variable `EDITORES`
+
+### Ejemplo de Configuración de Editores
+```bash
+# En .env
+EDITORES=jlvillaronga,lsaravia,vcampolongo
+```
 
 ## Instalación
 

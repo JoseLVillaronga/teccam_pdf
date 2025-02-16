@@ -12,6 +12,13 @@ import markdown2
 # Cargar variables de entorno
 load_dotenv()
 
+# Obtener lista de editores desde variables de entorno
+EDITORES = os.getenv('EDITORES', '').split(',')
+
+def es_editor(usuario):
+    """Verifica si un usuario está en la lista de editores."""
+    return usuario in EDITORES
+
 app = Flask(__name__)
 
 # Configuración de MongoDB
@@ -69,12 +76,18 @@ def buscar_documentos():
     # Buscar documentos
     documentos = list(collection.find(
         query,
-        {'titulo': 1, 'autor': 1, 'tema': 1}
+        {'titulo': 1, 'autor': 1, 'tema': 1, 'usuario': 1}
     ))
     
     # Convertir ObjectId a string para serialización JSON
     for doc in documentos:
         doc['_id'] = str(doc['_id'])
+    
+    # Añadir información de permisos si hay usuario
+    if usuario:
+        is_editor = es_editor(usuario)
+        for doc in documentos:
+            doc['can_delete'] = is_editor or (doc.get('usuario') == usuario)
     
     return jsonify(documentos)
 

@@ -159,6 +159,21 @@
         .floating-button i {
             font-size: 24px;
         }
+        
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            margin-left: 8px;
+        }
+        .badge-public {
+            background-color: #2e8b57;
+            color: white;
+        }
+        .badge-private {
+            background-color: #8b2e57;
+            color: white;
+        }
     </style>
 </head>
 <body>
@@ -280,16 +295,22 @@
                     documentList.innerHTML = '';
                     
                     documentos.forEach(doc => {
+                        const isPublic = !doc.usuario;
+                        const isOwner = doc.usuario === usuario;
+                        const badge = isPublic ? 
+                            '<span class="badge badge-public">Público</span>' : 
+                            (isOwner ? '<span class="badge badge-private">Propio</span>' : '');
+                        
                         const docElement = document.createElement('div');
                         docElement.className = 'document-item';
                         docElement.innerHTML = `
                             <div style="margin-right: 50px;">
-                                <h4>${doc.titulo}</h4>
+                                <h4>${doc.titulo}${badge}</h4>
                                 <p>Autor: ${doc.autor} | Tema: ${doc.tema}</p>
                             </div>
-                            <button class="delete-btn" onclick="event.stopPropagation(); borrarDocumento('${doc._id}')">
+                            ${doc.can_delete ? `<button class="delete-btn" onclick="event.stopPropagation(); borrarDocumento('${doc._id}')">
                                 Borrar
-                            </button>
+                            </button>` : ''}
                         `;
                         docElement.onclick = () => cargarDocumento(doc._id);
                         documentList.appendChild(docElement);

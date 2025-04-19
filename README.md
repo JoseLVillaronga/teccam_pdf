@@ -1,4 +1,5 @@
 # Teccam PDF - Extractor y Lector de Documentos
+![fbcfd4cd-a659-4007-8c74-ed3b55d66737](https://github.com/user-attachments/assets/639052c0-0244-4df0-bc91-4fee532ab691)
 
 ## Descripción
 Teccam PDF es una aplicación web que permite extraer y almacenar texto de documentos PDF y páginas web, convirtiéndolos a formato Markdown para una mejor legibilidad. La aplicación proporciona una interfaz web para la extracción y lectura de documentos.

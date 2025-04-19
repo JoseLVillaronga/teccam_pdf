@@ -8,6 +8,10 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - **Versión**: 1.0.0
 - **Estado**: Producción
 
+## Novedades recientes (Abril 2025)
+- Navegación mejorada: ahora la página principal (`/`) y el lector (`/leer`) tienen botones visibles para ir de una a otra, manteniendo el usuario si está definido.
+- La página principal soporta modo oscuro o claro automático, adaptándose a la configuración del sistema operativo/navegador.
+
 ## Características
 - Extracción de texto de archivos PDF
 - Extracción de texto de páginas web
@@ -137,6 +141,7 @@ python app.py
 3. Completar metadatos (título, autor, tema)
 4. Si hay usuario definido, elegir si el documento será público
 5. Procesar el documento
+6. Puedes ir al lector de documentos con el botón "Ir a Lector" (mantiene usuario si aplica).
 
 También se puede pre-cargar una URL:
 ```
@@ -148,7 +153,8 @@ http://localhost:5018/?url=https://ejemplo.com/documento.pdf&usuario=nombre_usua
 2. Usar los filtros de búsqueda (título, autor, tema)
 3. Seleccionar un documento para leer
 4. El contenido se muestra en formato legible con fondo oscuro
-5. Con usuario definido:
+5. Puedes volver a la página principal con el botón "Volver al Inicio" (mantiene usuario si aplica).
+6. Con usuario definido:
    - Ver documentos públicos y propios privados
    - Doble click en el texto para guardar posición de lectura
    - Al reabrir, se restaura automáticamente la última posición
@@ -213,7 +219,8 @@ journalctl --user -u teccam_pdf.service -f
 
 ### Interfaz de Usuario
 - Diseño responsive usando Bootstrap 5
-- Modo oscuro para lectura prolongada
+- Modo oscuro o claro automático en la página principal, según configuración del sistema operativo
+- Navegación directa entre la página principal y el lector mediante botones visibles
 - Procesamiento asíncrono para mejor experiencia de usuario
 - Notificaciones toast para feedback de acciones
 - Control de posición de lectura mediante doble click

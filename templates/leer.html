@@ -178,6 +178,11 @@
 </head>
 <body>
     <div class="container py-5">
+        {% if usuario %}
+        <a href="/?usuario={{ usuario }}" class="btn btn-outline-primary float-end ms-2 mt-2">Volver al Inicio</a>
+        {% else %}
+        <a href="/" class="btn btn-outline-primary float-end ms-2 mt-2">Volver al Inicio</a>
+        {% endif %}
         <h1 class="mb-4">Lector de Documentos</h1>
         
         <!-- Búsqueda -->

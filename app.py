@@ -5,7 +5,7 @@ import datetime
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from extractor_html import extraer_texto_html_markdown
-from extractor_pdf import extraer_texto_pdf_markdown
+from extractor_pdf import extraer_texto_pdf_markdown, extraer_texto_pdf_archivo
 from urllib.parse import urlparse
 from bson import ObjectId
 import markdown2
@@ -377,22 +377,38 @@ def manejar_posicion(documento_id):
 @app.route('/procesar', methods=['POST'])
 def procesar():
     try:
-        url = request.form['url']
         titulo = request.form['titulo']
         autor = request.form['autor']
         tema = request.form['tema']
         usuario = request.form.get('usuario', '')
         es_publico = request.form.get('es_publico') == 'true'
 
-        # Extraer el texto según el tipo de URL
-        if es_pdf(url):
-            resultado = extraer_texto_pdf_markdown(url)
+        # Verificar si se subió un archivo o se ingresó una URL
+        archivo = request.files.get('archivo_pdf')
+        url = request.form.get('url', '')
+
+        if archivo and archivo.filename and archivo.filename.lower().endswith('.pdf'):
+            # Procesar archivo PDF subido
+            archivo_bytes = archivo.read()
+            nombre_archivo = archivo.filename
+            resultado = extraer_texto_pdf_archivo(archivo_bytes, nombre_archivo)
+            url_origen = f"archivo_local:{nombre_archivo}"
+        elif url:
+            # Extraer el texto según el tipo de URL
+            if es_pdf(url):
+                resultado = extraer_texto_pdf_markdown(url)
+            else:
+                resultado = extraer_texto_html_markdown(url)
+            url_origen = url
         else:
-            resultado = extraer_texto_html_markdown(url)
+            return jsonify({
+                'status': 'error',
+                'message': 'Debe proporcionar una URL o subir un archivo PDF'
+            }), 400
 
         # Preparar documento para MongoDB
         documento = {
-            'url': url,
+            'url': url_origen,
             'titulo': titulo,
             'autor': autor,
             'tema': tema,

@@ -55,6 +55,33 @@ def extraer_texto_pdf_markdown(url):
         print(f"Error al procesar el PDF: {e}")
         return {"url": url, "texto": ""}
 
+
+def extraer_texto_pdf_archivo(archivo_bytes, nombre_archivo):
+    """
+    Extrae el texto de un archivo PDF subido directamente, en formato Markdown.
+    
+    :param archivo_bytes: Contenido del archivo PDF en bytes.
+    :param nombre_archivo: Nombre del archivo original (para identificación).
+    :return: Diccionario con el nombre del archivo y el texto extraído en formato Markdown.
+             Ejemplo:
+             {
+                 "archivo": "documento.pdf",
+                 "texto": "Texto extraído en formato Markdown..."
+             }
+    """
+    try:
+        # Abrir el PDF desde los bytes en memoria usando PyMuPDF (fitz)
+        doc = fitz.open(stream=archivo_bytes, filetype="pdf")
+        
+        # Convertir el documento a Markdown usando pymupdf4llm
+        md_text = pymupdf4llm.to_markdown(doc)
+        
+        return {"archivo": nombre_archivo, "texto": md_text}
+    
+    except Exception as e:
+        print(f"Error al procesar el archivo PDF '{nombre_archivo}': {e}")
+        return {"archivo": nombre_archivo, "texto": ""}
+
 if __name__ == "__main__":
     # Modo interactivo: se pide al usuario la URL del PDF a descargar
     url_usuario = input("Ingrese la URL del documento PDF: ").strip()

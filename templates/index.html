@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Extractor de Texto</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
     <style>
         body {
             background-color: #fff;
@@ -63,6 +64,36 @@
                 background: rgba(24,26,27,0.8);
             }
         }
+        /* Estilos para el selector URL/Archivo en modo claro */
+        .btn-outline-primary {
+            color: #222;
+            border-color: #0d6efd;
+        }
+        .btn-outline-primary:hover {
+            color: #fff;
+            background-color: #0d6efd;
+        }
+        .btn-check:checked + .btn-outline-primary {
+            color: #fff;
+            background-color: #0d6efd;
+        }
+        /* Estilos para el selector URL/Archivo en modo oscuro */
+        @media (prefers-color-scheme: dark) {
+            .btn-outline-primary {
+                color: #98fb98;
+                border-color: #2e8b57;
+            }
+            .btn-outline-primary:hover {
+                background-color: #2e8b57;
+                color: #fff;
+                border-color: #2e8b57;
+            }
+            .btn-check:checked + .btn-outline-primary {
+                background-color: #2e8b57;
+                border-color: #2e8b57;
+                color: #fff;
+            }
+        }
         .loading {
             display: none;
         }
@@ -91,12 +122,33 @@
         
         <div class="card">
             <div class="card-body">
-                <form id="extractorForm" method="POST" action="/procesar">
+                <form id="extractorForm" method="POST" action="/procesar" enctype="multipart/form-data">
+                    <!-- Selector de modo: URL o Archivo -->
                     <div class="mb-3">
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="modo_entrada" id="modoUrl" value="url" checked>
+                            <label class="btn btn-outline-primary" for="modoUrl">
+                                <i class="fas fa-link"></i> URL
+                            </label>
+                            <input type="radio" class="btn-check" name="modo_entrada" id="modoArchivo" value="archivo">
+                            <label class="btn btn-outline-primary" for="modoArchivo">
+                                <i class="fas fa-file-pdf"></i> Archivo PDF
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3" id="urlGroup">
                         <label for="url" class="form-label">URL del documento</label>
-                        <input type="url" class="form-control" id="url" name="url" required 
+                        <input type="url" class="form-control" id="url" name="url" 
                                value="{{ url }}" placeholder="https://ejemplo.com/documento.pdf">
                         <div class="form-text">Ingrese la URL de un documento PDF o página web</div>
+                    </div>
+
+                    <div class="mb-3" id="archivoGroup" style="display: none;">
+                        <label for="archivo_pdf" class="form-label">Archivo PDF</label>
+                        <input type="file" class="form-control" id="archivo_pdf" name="archivo_pdf" 
+                               accept=".pdf,application/pdf">
+                        <div class="form-text">Seleccione un archivo PDF de su computadora</div>
                     </div>
 
                     <div class="mb-3">
@@ -145,12 +197,60 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Toggle entre modo URL y modo Archivo
+        const modoUrl = document.getElementById('modoUrl');
+        const modoArchivo = document.getElementById('modoArchivo');
+        const urlGroup = document.getElementById('urlGroup');
+        const archivoGroup = document.getElementById('archivoGroup');
+        const urlInput = document.getElementById('url');
+        const archivoInput = document.getElementById('archivo_pdf');
+
+        function toggleModoEntrada() {
+            if (modoArchivo.checked) {
+                urlGroup.style.display = 'none';
+                archivoGroup.style.display = 'block';
+                urlInput.removeAttribute('required');
+                archivoInput.setAttribute('required', 'required');
+            } else {
+                urlGroup.style.display = 'block';
+                archivoGroup.style.display = 'none';
+                urlInput.setAttribute('required', 'required');
+                archivoInput.removeAttribute('required');
+            }
+        }
+
+        modoUrl.addEventListener('change', toggleModoEntrada);
+        modoArchivo.addEventListener('change', toggleModoEntrada);
+
         document.getElementById('extractorForm').addEventListener('submit', async function(e) {
             e.preventDefault();
             
             const loading = document.querySelector('.loading');
             const alertContainer = document.getElementById('alertContainer');
             const alertDiv = alertContainer.querySelector('.alert');
+            
+            // Validar según modo seleccionado
+            if (modoArchivo.checked) {
+                if (!archivoInput.files || archivoInput.files.length === 0) {
+                    alertDiv.className = 'alert alert-danger';
+                    alertDiv.textContent = 'Debe seleccionar un archivo PDF';
+                    alertContainer.style.display = 'block';
+                    return;
+                }
+                if (!archivoInput.files[0].name.toLowerCase().endsWith('.pdf')) {
+                    alertDiv.className = 'alert alert-danger';
+                    alertDiv.textContent = 'Solo se permiten archivos PDF';
+                    alertContainer.style.display = 'block';
+                    return;
+                }
+            } else {
+                if (!urlInput.value.trim()) {
+                    alertDiv.className = 'alert alert-danger';
+                    alertDiv.textContent = 'Debe ingresar una URL';
+                    alertContainer.style.display = 'block';
+                    return;
+                }
+            }
             
             loading.classList.add('active');
             alertContainer.style.display = 'none';
@@ -174,8 +274,16 @@
                 alertContainer.style.display = 'block';
 
                 if (response.ok) {
-                    // Limpiar el formulario si fue exitoso
+                    // Reset del formulario, pero mantener el modo seleccionado
                     this.reset();
+                    // Re-establecer estado visual según modo
+                    if (modoUrl.checked) {
+                        urlGroup.style.display = 'block';
+                        archivoGroup.style.display = 'none';
+                    } else {
+                        urlGroup.style.display = 'none';
+                        archivoGroup.style.display = 'block';
+                    }
                 }
             } catch (error) {
                 alertDiv.className = 'alert alert-danger';

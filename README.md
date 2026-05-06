@@ -8,7 +8,18 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - **Versión**: 1.0.0
 - **Estado**: Producción
 
-## Novedades recientes (Abril 2025)
+## Novedades recientes (Junio 2026)
+- **Optimización de rendimiento**: paginación del contenido de documentos en páginas más pequeñas (~50 líneas cada una), con carga bajo demanda. Solo se convierte a HTML la página que se está visualizando, no el documento completo.
+- **Caché en memoria**: las búsquedas y el contenido de documentos se cachean durante 5 minutos, reduciendo drásticamente los tiempos de carga repetitivos.
+- **Índices MongoDB**: se crearon índices en `titulo`, `autor`, `tema`, `usuario` y `fecha_creacion` para acelerar las búsquedas.
+- **Timeouts de conexión**: configurado timeout de 5 segundos para conexiones a MongoDB, evitando que la aplicación se cuelgue si la base de datos no responde.
+- **Paginación de resultados de búsqueda**: los resultados se muestran de a 20 documentos por página, con navegación entre páginas.
+- **Navegación por teclado**: mientras se lee un documento, se pueden usar las teclas de flecha izquierda (anterior) y derecha (siguiente) para cambiar de página.
+- **Barra de navegación de páginas**: nueva interfaz con botones para primera/anterior/siguiente/última página, e input numérico para ir a una página específica.
+- **Indicadores de carga**: se agregaron spinners mientras se cargan las páginas del documento.
+- **Scroll automático**: al cambiar de página, el scroll vuelve al inicio automáticamente.
+
+## Novedades anteriores (Abril 2025)
 - Navegación mejorada: ahora la página principal (`/`) y el lector (`/leer`) tienen botones visibles para ir de una a otra, manteniendo el usuario si está definido.
 - La página principal soporta modo oscuro o claro automático, adaptándose a la configuración del sistema operativo/navegador.
 
@@ -150,13 +161,18 @@ http://localhost:5018/?url=https://ejemplo.com/documento.pdf&usuario=nombre_usua
 
 ### Lectura de Documentos
 1. Acceder a `http://localhost:5018/leer` (opcionalmente con `?usuario=nombre_usuario`)
-2. Usar los filtros de búsqueda (título, autor, tema)
+2. Usar los filtros de búsqueda (título, autor, tema). Los resultados se muestran paginados (20 por página).
 3. Seleccionar un documento para leer
-4. El contenido se muestra en formato legible con fondo oscuro
-5. Puedes volver a la página principal con el botón "Volver al Inicio" (mantiene usuario si aplica).
-6. Con usuario definido:
+4. El contenido se muestra en formato legible con fondo oscuro, dividido en páginas
+5. Navegación entre páginas:
+   - Botones: primera, anterior, siguiente, última página
+   - Input numérico para ir a una página específica
+   - Teclas de flecha izquierda (anterior) y derecha (siguiente)
+6. Puedes volver a la página principal con el botón "Volver al Inicio" (mantiene usuario si aplica).
+7. Con usuario definido:
    - Ver documentos públicos y propios privados
    - Doble click en el texto para guardar posición de lectura
+   - Ctrl+S para guardar posición de lectura
    - Al reabrir, se restaura automáticamente la última posición
 
 ## Estructura del Proyecto
@@ -206,10 +222,11 @@ journalctl --user -u teccam_pdf.service -f
 ### APIs y Endpoints
 - `/`: Página principal de extracción
 - `/leer`: Interfaz de lectura
-- `/api/buscar`: API de búsqueda de documentos
-- `/api/documento/<id>`: API para obtener documento específico
+- `/api/buscar`: API de búsqueda de documentos (con paginación: `pagina` y `limite`)
+- `/api/documento/<id>`: API para obtener documento completo
+- `/api/documento/<id>/pagina/<n>`: API para obtener una página específica del documento
 - `/procesar`: Endpoint de procesamiento de documentos
-- `/api/posicion/<documento_id>`: API para gestionar posiciones de lectura
+- `/api/posicion/<documento_id>`: API para gestionar posiciones de lectura (GET/POST)
 
 ## Decisiones Técnicas
 
@@ -223,7 +240,11 @@ journalctl --user -u teccam_pdf.service -f
 - Navegación directa entre la página principal y el lector mediante botones visibles
 - Procesamiento asíncrono para mejor experiencia de usuario
 - Notificaciones toast para feedback de acciones
-- Control de posición de lectura mediante doble click
+- Control de posición de lectura mediante doble click o Ctrl+S
+- Navegación por teclado con flechas izquierda/derecha en el lector
+- Paginación de contenido para carga eficiente de documentos grandes
+- Indicadores de carga (spinners) durante la obtención de páginas
+- Scroll automático al inicio al cambiar de página
 
 ### Seguridad
 - Servicio ejecutado a nivel usuario (no root)
@@ -278,11 +299,13 @@ mongodump --db teccam_pdf
 ```
 
 ## Próximos Pasos y Mejoras Potenciales
-1. Implementar cache de documentos frecuentes
-2. Agregar soporte para más formatos de documento
-3. Implementar búsqueda de texto completo
-4. Agregar exportación de documentos
-5. Implementar sistema de etiquetas
+1. Implementar caché persistente (disco / Redis) para reducir aún más los tiempos de carga
+2. Agregar soporte para más formatos de documento (DOCX, EPUB, etc.)
+3. Implementar búsqueda de texto completo (full-text search en MongoDB)
+4. Agregar exportación de documentos (PDF, TXT, EPUB)
+5. Implementar sistema de etiquetas / categorías
+6. Carga progresiva de imágenes dentro de los documentos
+7. Modo de lectura continua (sin paginación, con scroll infinito)
 
 ## Soporte
 Para reportar problemas o sugerir mejoras, por favor crear un issue en el repositorio.

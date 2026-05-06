@@ -80,6 +80,11 @@
             background-color: #3cb371;
             border-color: #3cb371;
         }
+        .btn-primary:disabled {
+            background-color: #1a5c38;
+            border-color: #1a5c38;
+            cursor: not-allowed;
+        }
         /* Estilos para el contenido Markdown convertido */
         .markdown-content {
             color: #98fb98;
@@ -135,6 +140,119 @@
         .toast.show {
             opacity: 1;
         }
+
+        /* Barra de navegación de páginas */
+        .page-navigation {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #333;
+            border-radius: 8px;
+            flex-wrap: wrap;
+        }
+        .page-navigation button {
+            background-color: #2e8b57;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .page-navigation button:hover:not(:disabled) {
+            background-color: #3cb371;
+        }
+        .page-navigation button:disabled {
+            background-color: #444;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        .page-navigation .page-info {
+            color: #98fb98;
+            font-size: 1em;
+            padding: 0 10px;
+            min-width: 150px;
+            text-align: center;
+        }
+        .page-input {
+            width: 70px;
+            text-align: center;
+            background-color: #444;
+            border: 1px solid #2e8b57;
+            color: #98fb98;
+            border-radius: 5px;
+            padding: 5px;
+        }
+        .page-input:focus {
+            outline: none;
+            border-color: #3cb371;
+        }
+
+        /* Paginación de búsqueda */
+        .search-pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+        .search-pagination button {
+            background-color: #444;
+            color: #98fb98;
+            border: 1px solid #555;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .search-pagination button:hover:not(:disabled) {
+            background-color: #2e8b57;
+            border-color: #2e8b57;
+        }
+        .search-pagination button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        .search-pagination button.active {
+            background-color: #2e8b57;
+            border-color: #2e8b57;
+        }
+        .search-pagination .page-info {
+            color: #98fb98;
+            padding: 0 8px;
+        }
+
+        /* Loader */
+        .loader {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #444;
+            border-top: 3px solid #2e8b57;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-overlay {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            color: #98fb98;
+        }
+        .loading-overlay.show {
+            display: block;
+        }
+
         .floating-button {
             position: fixed;
             bottom: 20px;
@@ -205,12 +323,46 @@
 
         <!-- Lista de documentos -->
         <div class="document-list mb-4" id="documentList">
-            <!-- Los documentos se cargarán aquí dinámicamente -->
+            <div class="loading-overlay show" id="searchLoading">
+                <div class="loader"></div>
+                <span>Cargando documentos...</span>
+            </div>
+            <div id="searchResults"></div>
+            <div class="search-pagination" id="searchPagination"></div>
         </div>
 
         <!-- Contenido del documento -->
         <div class="document-content" id="documentContent" style="display: none;">
             <button class="btn btn-primary mb-3" onclick="volverALista()">Volver a la lista</button>
+            
+            <!-- Navegación de páginas -->
+            <div class="page-navigation mb-3" id="pageNavigation">
+                <button id="btnFirstPage" onclick="irAPagina(1)" title="Primera página">
+                    <i class="fas fa-fast-backward"></i>
+                </button>
+                <button id="btnPrevPage" onclick="irAPagina(paginaActual - 1)" title="Página anterior">
+                    <i class="fas fa-step-backward"></i>
+                </button>
+                <span class="page-info">
+                    Página <input type="number" class="page-input" id="pageInput" min="1" value="1" onchange="irAPagina(parseInt(this.value))"> de <span id="totalPaginas">0</span>
+                </span>
+                <button id="btnNextPage" onclick="irAPagina(paginaActual + 1)" title="Página siguiente">
+                    <i class="fas fa-step-forward"></i>
+                </button>
+                <button id="btnLastPage" onclick="irAPagina(totalPaginasDoc)" title="Última página">
+                    <i class="fas fa-fast-forward"></i>
+                </button>
+                <button id="btnSavePosition" class="btn btn-sm btn-outline-success ms-3" onclick="guardarPosicionManual()" title="Guardar posición actual (Ctrl+S)">
+                    <i class="fas fa-bookmark"></i> Guardar posición
+                </button>
+            </div>
+
+            <!-- Loading indicator para páginas -->
+            <div id="pageLoading" class="loading-overlay">
+                <div class="loader"></div>
+                <span>Cargando página...</span>
+            </div>
+
             <div class="markdown-content" id="markdownContent">
                 <!-- El contenido del documento se cargará aquí -->
             </div>
@@ -227,6 +379,11 @@
     <script>
         const usuario = "{{ usuario }}";  // Variable global para el usuario actual
         let documentoActualId = null;     // ID del documento actual
+        let paginaActual = 1;            // Página actual del documento
+        let totalPaginasDoc = 0;         // Total de páginas del documento
+        let cargandoPagina = false;      // Flag para evitar múltiples cargas simultáneas
+        let paginaBusqueda = 1;          // Página actual de búsqueda
+        let totalPaginasBusqueda = 1;    // Total de páginas de búsqueda
 
         function mostrarToast(mensaje) {
             const toastContainer = document.querySelector('.toast-container');
@@ -245,7 +402,7 @@
             }, 3000);
         }
 
-        async function guardarPosicion(posicion) {
+        async function guardarPosicion() {
             if (!usuario || !documentoActualId) return;
             
             try {
@@ -254,7 +411,10 @@
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ posicion })
+                    body: JSON.stringify({ 
+                        pagina: paginaActual,
+                        posicion: window.scrollY 
+                    })
                 });
                 
                 if (response.ok) {
@@ -265,39 +425,67 @@
             }
         }
 
+        function guardarPosicionManual() {
+            guardarPosicion();
+        }
+
         async function cargarUltimaPosicion() {
-            if (!usuario || !documentoActualId) return 0;
+            if (!usuario || !documentoActualId) return { pagina: 1, posicion: 0 };
             
             try {
                 const response = await fetch(`/api/posicion/${documentoActualId}?usuario=${usuario}`);
                 const data = await response.json();
-                return data.posicion;
+                return data;
             } catch (error) {
                 console.error('Error al cargar posición:', error);
-                return 0;
+                return { pagina: 1, posicion: 0 };
             }
         }
 
-        function buscarDocumentos() {
+        function buscarDocumentos(pagina) {
             const titulo = document.getElementById('searchTitulo').value;
             const autor = document.getElementById('searchAutor').value;
             const tema = document.getElementById('searchTema').value;
+            
+            if (pagina) {
+                paginaBusqueda = pagina;
+            } else {
+                paginaBusqueda = 1;
+            }
 
             const params = new URLSearchParams({
                 titulo: titulo,
                 autor: autor,
-                tema: tema
+                tema: tema,
+                pagina: paginaBusqueda,
+                limite: 20
             });
 
             if (usuario) {
                 params.append('usuario', usuario);
             }
 
+            // Mostrar loading
+            document.getElementById('searchLoading').classList.add('show');
+            document.getElementById('searchResults').innerHTML = '';
+            document.getElementById('searchPagination').innerHTML = '';
+
             fetch(`/api/buscar?${params.toString()}`)
                 .then(response => response.json())
-                .then(documentos => {
-                    const documentList = document.getElementById('documentList');
-                    documentList.innerHTML = '';
+                .then(data => {
+                    const documentos = data.documentos || [];
+                    const total = data.total || 0;
+                    totalPaginasBusqueda = data.total_paginas || 1;
+                    paginaBusqueda = data.pagina || 1;
+
+                    document.getElementById('searchLoading').classList.remove('show');
+                    const searchResults = document.getElementById('searchResults');
+                    searchResults.innerHTML = '';
+                    
+                    if (documentos.length === 0) {
+                        searchResults.innerHTML = '<p class="text-center text-muted">No se encontraron documentos.</p>';
+                        return;
+                    }
                     
                     documentos.forEach(doc => {
                         const isPublic = !doc.usuario;
@@ -318,17 +506,95 @@
                             </button>` : ''}
                         `;
                         docElement.onclick = () => cargarDocumento(doc._id);
-                        documentList.appendChild(docElement);
+                        searchResults.appendChild(docElement);
                     });
+
+                    // Renderizar paginación
+                    renderizarPaginacionBusqueda();
 
                     document.getElementById('documentList').style.display = 'block';
                     document.getElementById('documentContent').style.display = 'none';
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('searchLoading').classList.remove('show');
+                    document.getElementById('searchResults').innerHTML = '<p class="text-center text-danger">Error al cargar documentos.</p>';
                 });
+        }
+
+        function renderizarPaginacionBusqueda() {
+            const container = document.getElementById('searchPagination');
+            container.innerHTML = '';
+            
+            if (totalPaginasBusqueda <= 1) return;
+            
+            // Botón anterior
+            const btnPrev = document.createElement('button');
+            btnPrev.innerHTML = '<i class="fas fa-chevron-left"></i>';
+            btnPrev.disabled = paginaBusqueda <= 1;
+            btnPrev.onclick = () => buscarDocumentos(paginaBusqueda - 1);
+            container.appendChild(btnPrev);
+            
+            // Números de página (máximo 5 a la vez)
+            const maxVisible = 5;
+            let start = Math.max(1, paginaBusqueda - Math.floor(maxVisible / 2));
+            let end = Math.min(totalPaginasBusqueda, start + maxVisible - 1);
+            if (end - start + 1 < maxVisible) {
+                start = Math.max(1, end - maxVisible + 1);
+            }
+            
+            if (start > 1) {
+                const firstBtn = document.createElement('button');
+                firstBtn.textContent = '1';
+                firstBtn.onclick = () => buscarDocumentos(1);
+                container.appendChild(firstBtn);
+                if (start > 2) {
+                    const ellipsis = document.createElement('span');
+                    ellipsis.textContent = '...';
+                    ellipsis.className = 'page-info';
+                    container.appendChild(ellipsis);
+                }
+            }
+            
+            for (let i = start; i <= end; i++) {
+                const btn = document.createElement('button');
+                btn.textContent = i;
+                btn.className = i === paginaBusqueda ? 'active' : '';
+                btn.onclick = () => buscarDocumentos(i);
+                container.appendChild(btn);
+            }
+            
+            if (end < totalPaginasBusqueda) {
+                if (end < totalPaginasBusqueda - 1) {
+                    const ellipsis = document.createElement('span');
+                    ellipsis.textContent = '...';
+                    ellipsis.className = 'page-info';
+                    container.appendChild(ellipsis);
+                }
+                const lastBtn = document.createElement('button');
+                lastBtn.textContent = totalPaginasBusqueda;
+                lastBtn.onclick = () => buscarDocumentos(totalPaginasBusqueda);
+                container.appendChild(lastBtn);
+            }
+            
+            // Botón siguiente
+            const btnNext = document.createElement('button');
+            btnNext.innerHTML = '<i class="fas fa-chevron-right"></i>';
+            btnNext.disabled = paginaBusqueda >= totalPaginasBusqueda;
+            btnNext.onclick = () => buscarDocumentos(paginaBusqueda + 1);
+            container.appendChild(btnNext);
         }
 
         async function cargarDocumento(id) {
             try {
                 documentoActualId = id;
+                paginaActual = 1;
+                totalPaginasDoc = 0;
+                
+                // Mostrar loading
+                document.getElementById('pageLoading').classList.add('show');
+                document.getElementById('markdownContent').innerHTML = '';
+
                 const response = await fetch(`/api/documento/${id}`);
                 const data = await response.json();
                 
@@ -336,22 +602,118 @@
                 const contentDiv = document.getElementById('documentContent');
                 contentDiv.style.display = 'block';
                 
-                // Actualizar el contenido
+                // Actualizar contenido y metadatos
                 document.getElementById('markdownContent').innerHTML = data.contenido_html;
+                totalPaginasDoc = data.total_paginas;
+                paginaActual = data.pagina_actual;
                 
-                // Si hay usuario, cargar y aplicar última posición
+                // Actualizar navegación
+                document.getElementById('totalPaginas').textContent = totalPaginasDoc;
+                document.getElementById('pageInput').value = paginaActual;
+                document.getElementById('pageInput').max = totalPaginasDoc;
+                actualizarBotonesNavegacion();
+                
+                document.getElementById('pageLoading').classList.remove('show');
+                
+                // Si hay usuario, cargar última posición guardada
                 if (usuario) {
                     const posicion = await cargarUltimaPosicion();
-                    window.scrollTo(0, posicion);
+                    if (posicion.pagina && posicion.pagina > 1) {
+                        // Ir a la página guardada
+                        await irAPagina(posicion.pagina);
+                        setTimeout(() => {
+                            window.scrollTo(0, posicion.posicion || 0);
+                        }, 100);
+                    }
                     
-                    // Agregar evento de doble click al contenido
+                    // Agregar evento de doble click para guardar posición
                     document.getElementById('markdownContent').addEventListener('dblclick', () => {
-                        guardarPosicion(window.scrollY);
+                        guardarPosicion();
                     });
                 }
+                
+                // Listener global de teclado para navegación con flechas (siempre disponible)
+                document.addEventListener('keydown', (e) => {
+                    // Ctrl+S para guardar posición (si hay usuario)
+                    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                        if (usuario) {
+                            e.preventDefault();
+                            guardarPosicion();
+                        }
+                        return;
+                    }
+                    
+                    // Solo procesar flechas si el documento está visible
+                    const docContent = document.getElementById('documentContent');
+                    if (docContent.style.display !== 'block') return;
+                    
+                    // Ignorar si el usuario está escribiendo en un input
+                    const activeTag = document.activeElement ? document.activeElement.tagName : '';
+                    if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') return;
+                    
+                    // Flecha izquierda: página anterior
+                    if (e.key === 'ArrowLeft') {
+                        e.preventDefault();
+                        irAPagina(paginaActual - 1);
+                    }
+                    
+                    // Flecha derecha: página siguiente
+                    if (e.key === 'ArrowRight') {
+                        e.preventDefault();
+                        irAPagina(paginaActual + 1);
+                    }
+                });
             } catch (error) {
                 console.error('Error:', error);
+                document.getElementById('pageLoading').classList.remove('show');
+                document.getElementById('markdownContent').innerHTML = '<p class="text-center text-danger">Error al cargar el documento.</p>';
             }
+        }
+
+        async function irAPagina(numeroPagina) {
+            if (!documentoActualId || cargandoPagina) return;
+            if (numeroPagina < 1 || numeroPagina > totalPaginasDoc) return;
+            if (numeroPagina === paginaActual) return;
+            
+            cargandoPagina = true;
+            paginaActual = numeroPagina;
+            
+            try {
+                // Mostrar loading
+                document.getElementById('pageLoading').classList.add('show');
+                document.getElementById('markdownContent').style.opacity = '0.3';
+                
+                const response = await fetch(`/api/documento/${documentoActualId}/pagina/${numeroPagina}`);
+                const data = await response.json();
+                
+                document.getElementById('markdownContent').innerHTML = data.contenido_html;
+                totalPaginasDoc = data.total_paginas;
+                paginaActual = data.pagina_actual;
+                
+                // Actualizar navegación
+                document.getElementById('totalPaginas').textContent = totalPaginasDoc;
+                document.getElementById('pageInput').value = paginaActual;
+                document.getElementById('pageInput').max = totalPaginasDoc;
+                actualizarBotonesNavegacion();
+                
+                // Scroll al inicio
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+                
+            } catch (error) {
+                console.error('Error al cargar página:', error);
+                mostrarToast('Error al cargar la página');
+            } finally {
+                document.getElementById('pageLoading').classList.remove('show');
+                document.getElementById('markdownContent').style.opacity = '1';
+                cargandoPagina = false;
+            }
+        }
+
+        function actualizarBotonesNavegacion() {
+            document.getElementById('btnFirstPage').disabled = paginaActual <= 1;
+            document.getElementById('btnPrevPage').disabled = paginaActual <= 1;
+            document.getElementById('btnNextPage').disabled = paginaActual >= totalPaginasDoc;
+            document.getElementById('btnLastPage').disabled = paginaActual >= totalPaginasDoc;
         }
 
         function borrarDocumento(id) {
@@ -362,14 +724,15 @@
                 .then(response => response.json())
                 .then(result => {
                     if (result.status === 'success') {
+                        mostrarToast('Documento eliminado');
                         // Actualizar la lista de documentos
-                        buscarDocumentos();
+                        buscarDocumentos(paginaBusqueda);
                     } else {
-                        alert('Error al borrar el documento: ' + result.error);
+                        mostrarToast('Error al borrar: ' + (result.error || result.message));
                     }
                 })
                 .catch(error => {
-                    alert('Error al borrar el documento: ' + error);
+                    mostrarToast('Error al borrar el documento');
                 });
             }
         }
@@ -377,6 +740,8 @@
         function volverALista() {
             document.getElementById('documentList').style.display = 'block';
             document.getElementById('documentContent').style.display = 'none';
+            // Refrescar la lista al volver
+            buscarDocumentos(paginaBusqueda);
         }
 
         function scrollToTop() {
@@ -386,8 +751,18 @@
             });
         }
 
+        // Permitir búsqueda con Enter
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const active = document.activeElement;
+                if (active && ['searchTitulo', 'searchAutor', 'searchTema'].includes(active.id)) {
+                    buscarDocumentos();
+                }
+            }
+        });
+
         // Cargar documentos al iniciar
-        window.onload = () => buscarDocumentos();
+        window.onload = () => buscarDocumentos(1);
     </script>
 </body>
 </html>

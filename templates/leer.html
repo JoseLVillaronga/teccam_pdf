@@ -26,9 +26,9 @@
         .document-content {
             background-color: #2a2a2a;
             border-radius: 10px;
-            padding: 20px;
-            font-size: 1.1em;
-            line-height: 1.6;
+            padding: 25px;
+            font-size: 2.5em;
+            line-height: 1.7;
         }
         .document-item {
             background-color: #333;
@@ -98,6 +98,29 @@
             color: #7fff00;
             margin-top: 1em;
             margin-bottom: 0.5em;
+            line-height: 1.3;
+        }
+        .markdown-content h1 {
+            font-size: 3.5rem;
+        }
+        .markdown-content h3 {
+            font-size: 2.7rem;
+        }
+        .markdown-content h4 {
+            font-size: 2.75rem;
+        }
+        .markdown-content h5 {
+            font-size: 2.8rem;
+        }
+        .markdown-content h2 {
+            font-size: 3rem;
+        }
+        .markdown-content h6 {
+            font-size: 2.5rem;
+        }
+        /* Clase para elementos cuyo tamaño se ajusta dinámicamente */
+        .fit-to-width {
+            font-size: 2.5rem;
         }
         .markdown-content a {
             color: #00ff7f;
@@ -614,7 +637,11 @@
                 actualizarBotonesNavegacion();
                 
                 document.getElementById('pageLoading').classList.remove('show');
-                
+
+                // Ajustar tamaño de texto según ancho del contenedor
+                configurarObserverContenido();
+                ajustarTamanioTexto();
+
                 // Si hay usuario, cargar última posición guardada
                 if (usuario) {
                     const posicion = await cargarUltimaPosicion();
@@ -696,6 +723,10 @@
                 document.getElementById('pageInput').max = totalPaginasDoc;
                 actualizarBotonesNavegacion();
                 
+                // Ajustar tamaño de texto para la nueva página
+                configurarObserverContenido();
+                ajustarTamanioTexto();
+
                 // Scroll al inicio
                 window.scrollTo({ top: 0, behavior: 'smooth' });
                 
@@ -761,8 +792,100 @@
             }
         });
 
+        function ajustarTamanioTexto() {
+            const container = document.getElementById('markdownContent');
+            if (!container || container.innerHTML.trim() === '') return;
+            
+            const containerWidth = container.offsetWidth;
+            if (containerWidth <= 0) return;
+            
+            // Solo afectar <p> (texto base) y <h6>
+            const elementos = container.querySelectorAll('p, h6');
+            
+            // Crear canvas una sola vez para mediciones
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            
+            elementos.forEach(el => {
+                // Obtener el HTML interno y dividir por <br>
+                const html = el.innerHTML;
+                const lineas = html.split(/<br\s*\/?>/i);
+                
+                // Si no hay múltiples líneas, no ajustar (no hay "línea más larga" que referencia)
+                if (lineas.length <= 1) {
+                    el.style.removeProperty('font-size');
+                    return;
+                }
+                
+                // Obtener estilo de fuente actual (font-size y font-family)
+                const computedStyle = window.getComputedStyle(el);
+                const fontFamily = computedStyle.fontFamily;
+                const currentSize = parseFloat(computedStyle.fontSize);
+                
+                if (isNaN(currentSize) || currentSize <= 0) return;
+                
+                // Configurar el contexto con la fuente actual para medir
+                ctx.font = currentSize + 'px ' + fontFamily;
+                
+                // Encontrar el ancho de la línea más larga (limpiando etiquetas HTML internas)
+                let maxLineWidth = 0;
+                let maxLineText = '';
+                
+                lineas.forEach(linea => {
+                    const text = linea.replace(/<[^>]*>/g, '').trim();
+                    if (text.length === 0) return;
+                    const width = ctx.measureText(text).width;
+                    if (width > maxLineWidth) {
+                        maxLineWidth = width;
+                        maxLineText = text;
+                    }
+                });
+                
+                if (maxLineWidth <= 0) return;
+                
+                // Calcular el nuevo tamaño: que la línea más larga ocupe el 92% del contenedor
+                const targetWidth = containerWidth * 0.92;
+                const scale = targetWidth / maxLineWidth;
+                const newSize = currentSize * scale;
+                
+                // Limitar: no más del doble ni menos de la mitad del tamaño actual
+                const clampedSize = Math.max(currentSize * 0.5, Math.min(currentSize * 2, newSize));
+                
+                el.style.fontSize = clampedSize + 'px';
+            });
+        }
+
+        // Observer para detectar cambios en el contenido (nuevas páginas)
+        const contentObserver = new MutationObserver(() => {
+            ajustarTamanioTexto();
+        });
+
+        // Configurar observer cuando se carga un documento
+        function configurarObserverContenido() {
+            const target = document.getElementById('markdownContent');
+            if (target) {
+                contentObserver.disconnect();
+                contentObserver.observe(target, { 
+                    childList: true, 
+                    subtree: true,
+                    characterData: true
+                });
+            }
+        }
+
         // Cargar documentos al iniciar
         window.onload = () => buscarDocumentos(1);
+        
+        // Reajustar al cambiar tamaño de ventana (con debounce)
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                if (document.getElementById('documentContent').style.display === 'block') {
+                    ajustarTamanioTexto();
+                }
+            }, 300);
+        });
     </script>
 </body>
 </html>

@@ -26,13 +26,13 @@ import fitz  # PyMuPDF
 
 def limpiar_texto_pdf(texto):
     """
-    Limpia y reestructura el texto extraído de un PDF para unir líneas
-    que pertenecen al mismo párrafo.
+    Limpia y reestructura el texto extraído de un PDF para preservar
+    los saltos de línea dentro del párrafo.
     
     Características:
     - Une líneas que terminan con un guión (palabras partidas por salto de línea)
-    - Une líneas consecutivas que no tienen separación (mismo párrafo)
-    - Preserva párrafos separados por líneas en blanco
+    - Preserva líneas consecutivas dentro del mismo párrafo con \n
+    - Separa párrafos con \n\n (doble salto de línea)
     - Detecta nuevas páginas (form feed) y las marca como separación
     
     :param texto: Texto crudo extraído del PDF
@@ -48,7 +48,9 @@ def limpiar_texto_pdf(texto):
     
     def finalizar_parrafo():
         if parrafo_actual:
-            texto_parrafo = ' '.join(parrafo_actual)
+            # Unir líneas del párrafo con \n (salto de línea simple)
+            # para que Markdown pueda renderizarlas con <br>
+            texto_parrafo = '\n'.join(parrafo_actual)
             # Limpiar espacios múltiples
             texto_parrafo = re.sub(r' +', ' ', texto_parrafo)
             # Limpiar espacios antes de puntuación

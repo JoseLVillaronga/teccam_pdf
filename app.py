@@ -249,7 +249,8 @@ def obtener_documento(id):
                 total_paginas = len(paginas_markdown)
                 
                 # Convertir solo la primera página a HTML
-                primera_pagina_html = markdown2.markdown(paginas_markdown[0]) if paginas_markdown else ''
+                # Usamos extras=['break-on-newline'] para preservar saltos de línea simples (\n -> <br>)
+                primera_pagina_html = markdown2.markdown(paginas_markdown[0], extras=['break-on-newline']) if paginas_markdown else ''
                 
                 resultado = {
                     'titulo': documento['titulo'],
@@ -298,7 +299,8 @@ def obtener_pagina_documento(id, numero_pagina):
             return jsonify({'error': 'Número de página inválido'}), 400
         
         # Convertir solo la página solicitada a HTML
-        pagina_html = markdown2.markdown(paginas_markdown[numero_pagina - 1])
+        # Usamos extras=['break-on-newline'] para preservar saltos de línea simples (\n -> <br>)
+        pagina_html = markdown2.markdown(paginas_markdown[numero_pagina - 1], extras=['break-on-newline'])
         
         resultado = {
             'contenido_html': pagina_html,

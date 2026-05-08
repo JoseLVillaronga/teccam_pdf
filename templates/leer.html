@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lector de Documentos</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📄</text></svg>">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" rel="stylesheet">
     <style>
@@ -175,6 +176,10 @@
             background-color: #333;
             border-radius: 8px;
             flex-wrap: wrap;
+            font-size: 1.35rem;
+        }
+        .page-navigation * {
+            font-size: 1.35rem;
         }
         .page-navigation button {
             background-color: #2e8b57;
@@ -195,10 +200,31 @@
         }
         .page-navigation .page-info {
             color: #98fb98;
-            font-size: 1em;
             padding: 0 10px;
             min-width: 150px;
             text-align: center;
+        }
+        /* Selector de tamaño de texto */
+        .size-selector {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: 10px;
+        }
+        .size-selector label {
+            color: #98fb98;
+        }
+        .size-selector select {
+            background-color: #444;
+            color: #98fb98;
+            border: 1px solid #2e8b57;
+            border-radius: 5px;
+            padding: 4px 8px;
+            cursor: pointer;
+        }
+        .size-selector select:focus {
+            outline: none;
+            border-color: #3cb371;
         }
         .page-input {
             width: 70px;
@@ -378,6 +404,15 @@
                 <button id="btnSavePosition" class="btn btn-sm btn-outline-success ms-3" onclick="guardarPosicionManual()" title="Guardar posición actual (Ctrl+S)">
                     <i class="fas fa-bookmark"></i> Guardar posición
                 </button>
+                <div class="size-selector">
+                    <label for="textSizeSelect"><i class="fas fa-font"></i></label>
+                    <select id="textSizeSelect" onchange="cambiarTamanioTexto(this.value)">
+                        <option value="1.35">Texto chico</option>
+                        <option value="1.87" selected>Texto normal</option>
+                        <option value="2.38">Texto grande</option>
+                        <option value="2.9">Texto extragrande</option>
+                    </select>
+                </div>
             </div>
 
             <!-- Loading indicator para páginas -->
@@ -638,9 +673,8 @@
                 
                 document.getElementById('pageLoading').classList.remove('show');
 
-                // Ajustar tamaño de texto según ancho del contenedor
-                configurarObserverContenido();
-                ajustarTamanioTexto();
+                // Aplicar tamaño de texto guardado
+                aplicarTamanioGuardado();
 
                 // Si hay usuario, cargar última posición guardada
                 if (usuario) {
@@ -658,38 +692,6 @@
                         guardarPosicion();
                     });
                 }
-                
-                // Listener global de teclado para navegación con flechas (siempre disponible)
-                document.addEventListener('keydown', (e) => {
-                    // Ctrl+S para guardar posición (si hay usuario)
-                    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                        if (usuario) {
-                            e.preventDefault();
-                            guardarPosicion();
-                        }
-                        return;
-                    }
-                    
-                    // Solo procesar flechas si el documento está visible
-                    const docContent = document.getElementById('documentContent');
-                    if (docContent.style.display !== 'block') return;
-                    
-                    // Ignorar si el usuario está escribiendo en un input
-                    const activeTag = document.activeElement ? document.activeElement.tagName : '';
-                    if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') return;
-                    
-                    // Flecha izquierda: página anterior
-                    if (e.key === 'ArrowLeft') {
-                        e.preventDefault();
-                        irAPagina(paginaActual - 1);
-                    }
-                    
-                    // Flecha derecha: página siguiente
-                    if (e.key === 'ArrowRight') {
-                        e.preventDefault();
-                        irAPagina(paginaActual + 1);
-                    }
-                });
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('pageLoading').classList.remove('show');
@@ -723,9 +725,8 @@
                 document.getElementById('pageInput').max = totalPaginasDoc;
                 actualizarBotonesNavegacion();
                 
-                // Ajustar tamaño de texto para la nueva página
-                configurarObserverContenido();
-                ajustarTamanioTexto();
+                // Aplicar tamaño de texto guardado
+                aplicarTamanioGuardado();
 
                 // Scroll al inicio
                 window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -792,100 +793,78 @@
             }
         });
 
-        function ajustarTamanioTexto() {
+        function cambiarTamanioTexto(valorRem) {
+            // Guardar preferencia
+            localStorage.setItem('teccam_text_size', valorRem);
+            
             const container = document.getElementById('markdownContent');
-            if (!container || container.innerHTML.trim() === '') return;
+            if (!container) return;
             
-            const containerWidth = container.offsetWidth;
-            if (containerWidth <= 0) return;
-            
-            // Solo afectar <p> (texto base) y <h6>
-            const elementos = container.querySelectorAll('p, h6');
-            
-            // Crear canvas una sola vez para mediciones
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            
+            // Aplicar a <p>, <h6> y <li> dentro de listas (<ul>)
+            const elementos = container.querySelectorAll('p, h6, ul > li, ol > li');
             elementos.forEach(el => {
-                // Obtener el HTML interno y dividir por <br>
-                const html = el.innerHTML;
-                const lineas = html.split(/<br\s*\/?>/i);
-                
-                // Si no hay múltiples líneas, no ajustar (no hay "línea más larga" que referencia)
-                if (lineas.length <= 1) {
-                    el.style.removeProperty('font-size');
-                    return;
-                }
-                
-                // Obtener estilo de fuente actual (font-size y font-family)
-                const computedStyle = window.getComputedStyle(el);
-                const fontFamily = computedStyle.fontFamily;
-                const currentSize = parseFloat(computedStyle.fontSize);
-                
-                if (isNaN(currentSize) || currentSize <= 0) return;
-                
-                // Configurar el contexto con la fuente actual para medir
-                ctx.font = currentSize + 'px ' + fontFamily;
-                
-                // Encontrar el ancho de la línea más larga (limpiando etiquetas HTML internas)
-                let maxLineWidth = 0;
-                let maxLineText = '';
-                
-                lineas.forEach(linea => {
-                    const text = linea.replace(/<[^>]*>/g, '').trim();
-                    if (text.length === 0) return;
-                    const width = ctx.measureText(text).width;
-                    if (width > maxLineWidth) {
-                        maxLineWidth = width;
-                        maxLineText = text;
-                    }
-                });
-                
-                if (maxLineWidth <= 0) return;
-                
-                // Calcular el nuevo tamaño: que la línea más larga ocupe el 92% del contenedor
-                const targetWidth = containerWidth * 0.92;
-                const scale = targetWidth / maxLineWidth;
-                const newSize = currentSize * scale;
-                
-                // Limitar: no más del doble ni menos de la mitad del tamaño actual
-                const clampedSize = Math.max(currentSize * 0.5, Math.min(currentSize * 2, newSize));
-                
-                el.style.fontSize = clampedSize + 'px';
+                el.style.fontSize = valorRem + 'rem';
             });
         }
 
-        // Observer para detectar cambios en el contenido (nuevas páginas)
-        const contentObserver = new MutationObserver(() => {
-            ajustarTamanioTexto();
-        });
-
-        // Configurar observer cuando se carga un documento
-        function configurarObserverContenido() {
-            const target = document.getElementById('markdownContent');
-            if (target) {
-                contentObserver.disconnect();
-                contentObserver.observe(target, { 
-                    childList: true, 
-                    subtree: true,
-                    characterData: true
-                });
+        function aplicarTamanioGuardado() {
+            const saved = localStorage.getItem('teccam_text_size');
+            const select = document.getElementById('textSizeSelect');
+            if (saved && select) {
+                select.value = saved;
+                cambiarTamanioTexto(saved);
+            } else if (select) {
+                // Valor por defecto: "Texto normal" = 1.87rem
+                select.value = '1.87';
+                cambiarTamanioTexto('1.87');
             }
         }
 
+        // Listener global de teclado (registrado UNA sola vez)
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+S para guardar posición (si hay usuario)
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                if (usuario) {
+                    e.preventDefault();
+                    guardarPosicion();
+                }
+                return;
+            }
+            
+            // Ignorar si el usuario está escribiendo en un input
+            const activeTag = document.activeElement ? document.activeElement.tagName : '';
+            if (activeTag === 'INPUT' || activeTag === 'TEXTAREA' || activeTag === 'SELECT') return;
+            
+            const docContent = document.getElementById('documentContent');
+            const docList = document.getElementById('documentList');
+            
+            // Flecha izquierda: página anterior
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                if (docContent && docContent.style.display === 'block') {
+                    irAPagina(paginaActual - 1);
+                } else if (docList && docList.style.display !== 'none') {
+                    if (paginaBusqueda > 1) {
+                        buscarDocumentos(paginaBusqueda - 1);
+                    }
+                }
+            }
+            
+            // Flecha derecha: página siguiente
+            if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                if (docContent && docContent.style.display === 'block') {
+                    irAPagina(paginaActual + 1);
+                } else if (docList && docList.style.display !== 'none') {
+                    if (paginaBusqueda < totalPaginasBusqueda) {
+                        buscarDocumentos(paginaBusqueda + 1);
+                    }
+                }
+            }
+        });
+
         // Cargar documentos al iniciar
         window.onload = () => buscarDocumentos(1);
-        
-        // Reajustar al cambiar tamaño de ventana (con debounce)
-        let resizeTimeout;
-        window.addEventListener('resize', () => {
-            clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(() => {
-                if (document.getElementById('documentContent').style.display === 'block') {
-                    ajustarTamanioTexto();
-                }
-            }, 300);
-        });
     </script>
 </body>
 </html>

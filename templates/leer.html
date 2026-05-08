@@ -165,21 +165,38 @@
             opacity: 1;
         }
 
-        /* Barra de navegación de páginas */
+        /* Barra de navegación de páginas - sticky */
         .page-navigation {
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 10px;
-            margin-top: 20px;
             padding: 15px;
             background-color: #333;
             border-radius: 8px;
             flex-wrap: wrap;
             font-size: 1.35rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            margin-top: 20px;
+            transition: box-shadow 0.2s, border-radius 0.2s;
+        }
+        .page-navigation.stuck {
+            border-radius: 0;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+            margin-top: 0;
         }
         .page-navigation * {
             font-size: 1.35rem;
+        }
+        .page-navigation-spacer {
+            display: none;
+            height: 0;
+        }
+        .page-navigation-spacer.active {
+            display: block;
+            height: var(--nav-height, 75px);
         }
         .page-navigation button {
             background-color: #2e8b57;
@@ -420,6 +437,9 @@
                 <div class="loader"></div>
                 <span>Cargando página...</span>
             </div>
+
+            <!-- Espaciador para la barra sticky -->
+            <div id="navSpacer" class="page-navigation-spacer"></div>
 
             <div class="markdown-content" id="markdownContent">
                 <!-- El contenido del documento se cargará aquí -->
@@ -676,6 +696,9 @@
                 // Aplicar tamaño de texto guardado
                 aplicarTamanioGuardado();
 
+                // Configurar sticky nav
+                configurarStickyNav();
+
                 // Si hay usuario, cargar última posición guardada
                 if (usuario) {
                     const posicion = await cargarUltimaPosicion();
@@ -818,6 +841,25 @@
                 select.value = '1.87';
                 cambiarTamanioTexto('1.87');
             }
+        }
+
+        // Sticky navigation: detectar cuando la barra queda fija arriba
+        function configurarStickyNav() {
+            const nav = document.getElementById('pageNavigation');
+            if (!nav) return;
+            
+            const observer = new IntersectionObserver(
+                ([entry]) => {
+                    const stuck = entry.intersectionRatio < 1;
+                    nav.classList.toggle('stuck', stuck);
+                    const spacer = document.getElementById('navSpacer');
+                    if (spacer) {
+                        spacer.classList.toggle('active', stuck);
+                    }
+                },
+                { threshold: [1] }
+            );
+            observer.observe(nav);
         }
 
         // Listener global de teclado (registrado UNA sola vez)

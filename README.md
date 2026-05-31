@@ -10,7 +10,7 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 
 ## Novedades recientes (Junio 2026)
 - **Optimización de rendimiento**: paginación del contenido de documentos en páginas más pequeñas (~50 líneas cada una), con carga bajo demanda. Solo se convierte a HTML la página que se está visualizando, no el documento completo.
-- **Caché en memoria**: las búsquedas y el contenido de documentos se cachean durante 5 minutos, reduciendo drásticamente los tiempos de carga repetitivos.
+- **Caché en disco (Persistente y Concurrente)**: integración de `Flask-Caching` con almacenamiento temporal en disco (FileSystemCache) durante 5 minutos. Permite un funcionamiento óptimo y consistente en entornos concurrentes y de producción multi-proceso (como Gunicorn/uWSGI).
 - **Índices MongoDB**: se crearon índices en `titulo`, `autor`, `tema`, `usuario` y `fecha_creacion` para acelerar las búsquedas.
 - **Timeouts de conexión**: configurado timeout de 5 segundos para conexiones a MongoDB, evitando que la aplicación se cuelgue si la base de datos no responde.
 - **Paginación de resultados de búsqueda**: los resultados se muestran de a 20 documentos por página, con navegación entre páginas.
@@ -225,6 +225,7 @@ journalctl --user -u teccam_pdf.service -f
 
 ### Principales Dependencias
 - Flask: Framework web
+- Flask-Caching: Gestión de caché concurrente y persistente
 - PyMuPDF: Procesamiento de PDFs
 - BeautifulSoup4: Procesamiento de HTML
 - MongoDB: Almacenamiento de documentos
@@ -312,7 +313,7 @@ mongodump --db teccam_pdf
 ```
 
 ## Próximos Pasos y Mejoras Potenciales
-1. **Caché Concurrente y Compartido**: Migrar la caché en memoria interna hacia `Flask-Caching` con almacenamiento persistente (disco o Redis) para soportar despliegues concurrentes multi-proceso en producción (como Gunicorn/uWSGI) y asegurar coherencia de datos.
+1. **Caché distribuida (Redis)**: Migrar el almacenamiento de `Flask-Caching` de disco a un clúster de Redis si la aplicación escala a múltiples servidores independientes.
 2. Agregar soporte para más formatos de documento (DOCX, EPUB, etc.)
 3. Implementar búsqueda de texto completo (full-text search en MongoDB)
 4. Agregar exportación de documentos (PDF, TXT, EPUB)

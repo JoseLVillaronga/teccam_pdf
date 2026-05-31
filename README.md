@@ -19,6 +19,7 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - **Indicadores de carga**: se agregaron spinners mientras se cargan las páginas del documento.
 - **Scroll automático**: al cambiar de página, el scroll vuelve al inicio automáticamente.
 - **Seguridad (Sanitización XSS)**: integración de `DOMPurify` en el lector para limpiar y sanitizar el HTML de los documentos extraídos antes de renderizarse en pantalla, neutralizando código malicioso.
+- **Traducción de libros con DeepSeek**: integración de la API de DeepSeek (`deepseek-v4-flash`) para traducir títulos, temas y textos de libros ya cargados a Español, Inglés o Portugués, preservando la estructura Markdown y el formato original de forma asíncrona (con barra de progreso).
 
 ## Novedades anteriores (Abril 2025)
 - Navegación mejorada: ahora la página principal (`/`) y el lector (`/leer`) tienen botones visibles para ir de una a otra, manteniendo el usuario si está definido.
@@ -28,6 +29,7 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - Extracción de texto de archivos PDF
 - Extracción de texto de páginas web
 - Conversión automática a formato Markdown
+- Traducción inteligente de documentos (Español/Inglés/Portugués) usando la API de DeepSeek
 - Almacenamiento en MongoDB
 - Interfaz de búsqueda y lectura
 - Diseño responsive
@@ -54,6 +56,11 @@ MONGO_HOST=host
 HTTP_HOST=localhost
 HTTP_PORT=5018
 EDITORES=editor1,editor2,editor3
+
+# API de Inteligencia Artificial (Traductor DeepSeek)
+OPENAI_API_KEY=tu_api_key_aqui
+OPENAI_MODEL=deepseek-v4-flash
+OPENAI_BASE_URL=https://api.deepseek.com/v1
 ```
 
 Descripción de las variables:
@@ -63,6 +70,9 @@ Descripción de las variables:
 - `HTTP_HOST`: Host para el servidor web (localhost para desarrollo)
 - `HTTP_PORT`: Puerto para el servidor web
 - `EDITORES`: Lista de usuarios con permisos de edición, separados por comas
+- `OPENAI_API_KEY`: API Key para acceder a la API de DeepSeek
+- `OPENAI_MODEL`: Identificador del modelo (por ejemplo, `deepseek-v4-flash`)
+- `OPENAI_BASE_URL`: URL base de la API compatible con OpenAI para el modelo DeepSeek
 
 ## Sistema de Permisos
 
@@ -224,10 +234,12 @@ journalctl --user -u teccam_pdf.service -f
 - `/`: Página principal de extracción
 - `/leer`: Interfaz de lectura
 - `/api/buscar`: API de búsqueda de documentos (con paginación: `pagina` y `limite`)
-- `/api/documento/<id>`: API para obtener documento completo
-- `/api/documento/<id>/pagina/<n>`: API para obtener una página específica del documento
-- `/procesar`: Endpoint de procesamiento de documentos
+- `/api/documento/<id>`: API para obtener documento completo o eliminarlo (GET/DELETE)
+- `/api/documento/<id>/pagina/<n>`: API para obtener una página específica del documento (GET)
+- `/procesar`: Endpoint de procesamiento de documentos (POST)
 - `/api/posicion/<documento_id>`: API para gestionar posiciones de lectura (GET/POST)
+- `/api/traducir/<id>`: API para iniciar el job de traducción asíncrona de un libro (POST)
+- `/api/traducir/estado/<job_id>`: API para consultar el estado y avance de la traducción (GET)
 
 ## Decisiones Técnicas
 

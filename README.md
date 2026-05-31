@@ -18,6 +18,7 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - **Barra de navegación de páginas**: nueva interfaz con botones para primera/anterior/siguiente/última página, e input numérico para ir a una página específica.
 - **Indicadores de carga**: se agregaron spinners mientras se cargan las páginas del documento.
 - **Scroll automático**: al cambiar de página, el scroll vuelve al inicio automáticamente.
+- **Seguridad (Sanitización XSS)**: integración de `DOMPurify` en el lector para limpiar y sanitizar el HTML de los documentos extraídos antes de renderizarse en pantalla, neutralizando código malicioso.
 
 ## Novedades anteriores (Abril 2025)
 - Navegación mejorada: ahora la página principal (`/`) y el lector (`/leer`) tienen botones visibles para ir de una a otra, manteniendo el usuario si está definido.
@@ -299,7 +300,7 @@ mongodump --db teccam_pdf
 ```
 
 ## Próximos Pasos y Mejoras Potenciales
-1. Implementar caché persistente (disco / Redis) para reducir aún más los tiempos de carga
+1. **Caché Concurrente y Compartido**: Migrar la caché en memoria interna hacia `Flask-Caching` con almacenamiento persistente (disco o Redis) para soportar despliegues concurrentes multi-proceso en producción (como Gunicorn/uWSGI) y asegurar coherencia de datos.
 2. Agregar soporte para más formatos de documento (DOCX, EPUB, etc.)
 3. Implementar búsqueda de texto completo (full-text search en MongoDB)
 4. Agregar exportación de documentos (PDF, TXT, EPUB)

@@ -7,3 +7,5 @@ html2text==2020.1.16
 PyMuPDF>=1.24.10
 pymupdf4llm==0.0.17
 markdown2==2.4.12
+Flask-Caching==2.1.0
+

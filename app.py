@@ -63,9 +63,13 @@ def asegurar_indices():
 # Ejecutar al inicio
 asegurar_indices()
 
-# Caché simple en memoria
-cache_memoria = {}
-cache_tiempos = {}
+# Configuración de caché concurrente en disco (FileSystemCache)
+cache_config = {
+    "CACHE_TYPE": "FileSystemCache",
+    "CACHE_DIR": os.path.join(os.path.abspath(os.path.dirname(__file__)), 'flask_cache'),
+    "CACHE_DEFAULT_TIMEOUT": CACHE_TTL
+}
+cache = Cache(app, config=cache_config)
 
 # Tareas de traducción activas e idiomas soportados
 tareas_traduccion = {}
@@ -76,25 +80,16 @@ IDIOMAS_MAP = {
 }
 
 def obtener_cache(key):
-    """Obtiene un valor del caché si no ha expirado."""
-    if key in cache_memoria and key in cache_tiempos:
-        if (datetime.datetime.utcnow() - cache_tiempos[key]).total_seconds() < CACHE_TTL:
-            return cache_memoria[key]
-        else:
-            # Limpiar caché expirado
-            del cache_memoria[key]
-            del cache_tiempos[key]
-    return None
+    """Obtiene un valor del caché si no ha expirado o si existe en disco."""
+    return cache.get(key)
 
 def guardar_cache(key, value):
     """Guarda un valor en el caché."""
-    cache_memoria[key] = value
-    cache_tiempos[key] = datetime.datetime.utcnow()
+    cache.set(key, value, timeout=CACHE_TTL)
 
 def limpiar_cache():
     """Limpia el caché completamente."""
-    cache_memoria.clear()
-    cache_tiempos.clear()
+    cache.clear()
 
 def es_pdf(url):
     """Determina si una URL corresponde a un archivo PDF."""

@@ -12,6 +12,10 @@ import markdown2
 import hashlib
 import json
 import math
+import threading
+import uuid
+import requests
+import time
 
 # Cargar variables de entorno
 load_dotenv()
@@ -62,6 +66,14 @@ asegurar_indices()
 # Caché simple en memoria
 cache_memoria = {}
 cache_tiempos = {}
+
+# Tareas de traducción activas e idiomas soportados
+tareas_traduccion = {}
+IDIOMAS_MAP = {
+    'es': 'Español',
+    'en': 'Inglés',
+    'pt': 'Portugués'
+}
 
 def obtener_cache(key):
     """Obtiene un valor del caché si no ha expirado."""
@@ -443,6 +455,234 @@ def procesar():
             'status': 'error',
             'message': str(e)
         }), 500
+
+def ejecutar_traduccion(original_id, idioma_destino, job_id, usuario=None):
+    try:
+        # 1. Obtener el documento original
+        doc = collection.find_one({'_id': ObjectId(original_id)})
+        if not doc:
+            tareas_traduccion[job_id] = {
+                'estado': 'error',
+                'paginas_procesadas': 0,
+                'total_paginas': 0,
+                'resultado_id': None,
+                'error': 'Documento original no encontrado'
+            }
+            return
+
+        api_key = os.getenv('OPENAI_API_KEY')
+        base_url = os.getenv('OPENAI_BASE_URL', 'https://api.deepseek.com/v1')
+        model = os.getenv('OPENAI_MODEL', 'deepseek-v4-flash')
+
+        if not api_key:
+            tareas_traduccion[job_id] = {
+                'estado': 'error',
+                'paginas_procesadas': 0,
+                'total_paginas': 0,
+                'resultado_id': None,
+                'error': 'API key de DeepSeek (OPENAI_API_KEY) no configurada en .env'
+            }
+            return
+
+        nombre_idioma = IDIOMAS_MAP.get(idioma_destino, idioma_destino)
+
+        # 2. Traducir metadatos (Título y Tema)
+        headers = {
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json'
+        }
+
+        meta_prompt = (
+            f"Traduce el siguiente Título y Tema al {nombre_idioma}. "
+            "Responde EXCLUSIVAMENTE en formato JSON con la estructura: "
+            '{"titulo": "...", "tema": "..."}. No agregues código markdown, explicaciones ni comentarios.\n\n'
+            f"Título: {doc['titulo']}\nTema: {doc['tema']}"
+        )
+
+        meta_payload = {
+            'model': model,
+            'messages': [
+                {'role': 'system', 'content': 'Eres un traductor experto que responde únicamente en JSON limpio.'},
+                {'role': 'user', 'content': meta_prompt}
+            ],
+            'temperature': 0.1
+        }
+
+        titulo_traducido = f"{doc['titulo']} ({nombre_idioma})"
+        tema_traducido = doc['tema']
+
+        try:
+            res_meta = requests.post(f"{base_url}/chat/completions", headers=headers, json=meta_payload, timeout=30)
+            res_meta.raise_for_status()
+            meta_data = res_meta.json()
+            content = meta_data['choices'][0]['message']['content'].strip()
+            
+            # Limpiar bloques markdown si existen
+            if content.startswith('```'):
+                parts = content.split('```')
+                if len(parts) >= 3:
+                    content = parts[1]
+                    if content.startswith('json'):
+                        content = content[4:]
+            content = content.strip('` \n')
+            
+            parsed_meta = json.loads(content)
+            titulo_traducido = parsed_meta.get('titulo', titulo_traducido)
+            tema_traducido = parsed_meta.get('tema', tema_traducido)
+        except Exception as e:
+            print(f"Error al traducir metadatos (usando valores por defecto): {e}")
+
+        # 3. Dividir y traducir el texto del documento por páginas
+        paginas_originales = dividir_en_paginas(doc['texto'])
+        total_paginas = len(paginas_originales)
+        
+        tareas_traduccion[job_id] = {
+            'estado': 'procesando',
+            'paginas_procesadas': 0,
+            'total_paginas': total_paginas,
+            'resultado_id': None,
+            'error': None
+        }
+
+        paginas_traducidas = []
+        
+        for idx, pagina in enumerate(paginas_originales):
+            if not pagina.strip():
+                paginas_traducidas.append('')
+                tareas_traduccion[job_id]['paginas_procesadas'] = idx + 1
+                continue
+                
+            prompt_pagina = (
+                f"Traduce el siguiente fragmento de texto Markdown al {nombre_idioma}. "
+                "Preserva estrictamente la estructura Markdown, enlaces, bloques de código, listas y saltos de línea. "
+                "NO agregues aclaraciones, notas, comentarios ni introducciones. Tu respuesta debe ser estrictamente la traducción:\n\n"
+                f"{pagina}"
+            )
+            
+            payload_pagina = {
+                'model': model,
+                'messages': [
+                    {'role': 'system', 'content': 'Eres un traductor profesional experto de Markdown. Traduces texto conservando saltos de línea y formato sin añadir notas explicativas.'},
+                    {'role': 'user', 'content': prompt_pagina}
+                ],
+                'temperature': 0.2
+            }
+            
+            exito = False
+            error_msg = ""
+            for intento in range(3):
+                try:
+                    res_pag = requests.post(f"{base_url}/chat/completions", headers=headers, json=payload_pagina, timeout=60)
+                    res_pag.raise_for_status()
+                    res_data = res_pag.json()
+                    traducido = res_data['choices'][0]['message']['content']
+                    paginas_traducidas.append(traducido)
+                    exito = True
+                    break
+                except Exception as e:
+                    error_msg = str(e)
+                    time.sleep(2)
+            
+            if not exito:
+                tareas_traduccion[job_id] = {
+                    'estado': 'error',
+                    'paginas_procesadas': idx,
+                    'total_paginas': total_paginas,
+                    'resultado_id': None,
+                    'error': f'Error en la traducción de la página {idx + 1}: {error_msg}'
+                }
+                return
+                
+            tareas_traduccion[job_id]['paginas_procesadas'] = idx + 1
+
+        # Unir todas las páginas traducidas
+        texto_completo_traducido = '\n'.join(paginas_traducidas)
+
+        # 4. Crear el nuevo documento en la DB
+        doc_traducido = {
+            'url': f"traduccion_de:{doc['_id']}",
+            'titulo': f"{titulo_traducido} [Traducido al {nombre_idioma}]",
+            'autor': doc['autor'],
+            'tema': tema_traducido,
+            'texto': texto_completo_traducido,
+            'fecha_creacion': datetime.datetime.utcnow()
+        }
+        
+        if 'usuario' in doc:
+            doc_traducido['usuario'] = doc['usuario']
+            
+        resultado = collection.insert_one(doc_traducido)
+        nuevo_id = str(resultado.inserted_id)
+        
+        # Limpiar caché de búsqueda al agregar nuevo documento
+        limpiar_cache()
+        
+        tareas_traduccion[job_id] = {
+            'estado': 'completado',
+            'paginas_procesadas': total_paginas,
+            'total_paginas': total_paginas,
+            'resultado_id': nuevo_id,
+            'error': None
+        }
+
+    except Exception as e:
+        tareas_traduccion[job_id] = {
+            'estado': 'error',
+            'paginas_procesadas': 0,
+            'total_paginas': 0,
+            'resultado_id': None,
+            'error': f'Error general en traducción: {str(e)}'
+        }
+
+@app.route('/api/traducir/<id>', methods=['POST'])
+def traducir_documento(id):
+    """API para iniciar la traducción de un documento."""
+    idioma_destino = request.json.get('idioma_destino')
+    usuario = request.json.get('usuario')
+    
+    if not idioma_destino or idioma_destino not in IDIOMAS_MAP:
+        return jsonify({'error': 'Idioma de destino inválido'}), 400
+        
+    try:
+        doc = collection.find_one({'_id': ObjectId(id)})
+        if not doc:
+            return jsonify({'error': 'Documento no encontrado'}), 404
+            
+        if doc.get('usuario') and doc.get('usuario') != usuario and not es_editor(usuario):
+            return jsonify({'error': 'No tiene permisos para acceder a este documento'}), 403
+            
+        job_id = str(uuid.uuid4())
+        
+        tareas_traduccion[job_id] = {
+            'estado': 'procesando',
+            'paginas_procesadas': 0,
+            'total_paginas': 0,
+            'resultado_id': None,
+            'error': None
+        }
+        
+        hilo = threading.Thread(
+            target=ejecutar_traduccion,
+            args=(id, idioma_destino, job_id, usuario)
+        )
+        hilo.start()
+        
+        return jsonify({
+            'status': 'success',
+            'job_id': job_id
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/traducir/estado/<job_id>', methods=['GET'])
+def estado_traduccion(job_id):
+    """API para consultar el estado de una traducción."""
+    tarea = tareas_traduccion.get(job_id)
+    if not tarea:
+        return jsonify({'error': 'Tarea de traducción no encontrada'}), 404
+        
+    return jsonify(tarea)
 
 if __name__ == '__main__':
     # Obtener host y puerto desde variables de entorno

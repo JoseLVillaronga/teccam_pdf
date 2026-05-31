@@ -422,6 +422,9 @@
                 <button id="btnSavePosition" class="btn btn-sm btn-outline-success ms-3" onclick="guardarPosicionManual()" title="Guardar posición actual (Ctrl+S)">
                     <i class="fas fa-bookmark"></i> Guardar posición
                 </button>
+                <button id="btnTranslate" class="btn btn-sm btn-outline-primary ms-2" onclick="abrirModalTraduccion()" title="Traducir documento">
+                    <i class="fas fa-language"></i> Traducir
+                </button>
                 <div class="size-selector">
                     <label for="textSizeSelect"><i class="fas fa-font"></i></label>
                     <select id="textSizeSelect" onchange="cambiarTamanioTexto(this.value)">
@@ -453,6 +456,54 @@
     <button class="floating-button" onclick="scrollToTop()" title="Volver arriba">
         <i class="fas fa-arrow-up"></i>
     </button>
+
+    <!-- Modal de Traducción -->
+    <div class="modal fade" id="translateModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="translateModalLabel" aria-hidden="true" style="color: #98fb98;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="background-color: #2a2a2a; border: 1px solid #2e8b57; border-radius: 10px;">
+                <div class="modal-header" style="border-bottom: 1px solid #333;">
+                    <h5 class="modal-title" id="translateModalLabel"><i class="fas fa-language"></i> Traducir Documento</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" id="btnTranslateCloseX"></button>
+                </div>
+                <div class="modal-body text-start">
+                    <div id="translateFormArea">
+                        <p>Seleccione el idioma al que desea traducir este documento:</p>
+                        <div class="mb-3">
+                            <select id="selectTargetLanguage" class="form-select" style="background-color: #333; border-color: #2e8b57; color: #98fb98;">
+                                <option value="es">Español</option>
+                                <option value="en">Inglés</option>
+                                <option value="pt">Portugués</option>
+                            </select>
+                        </div>
+                        <p class="text-muted small"><i class="fas fa-info-circle"></i> Se creará una copia del documento actual con el título, tema y texto traducidos mediante DeepSeek.</p>
+                        <button type="button" class="btn btn-primary w-100" onclick="iniciarTraduccion()">Comenzar Traducción</button>
+                    </div>
+                    
+                    <div id="translateProgressArea" style="display: none;">
+                        <p id="translateStatusText" class="text-center font-monospace mb-2">Iniciando traducción...</p>
+                        <div class="progress mb-3" style="background-color: #333; height: 20px;">
+                            <div id="translateProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="spinner-border text-success" role="status">
+                                <span class="visually-hidden">Procesando...</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="translateSuccessArea" style="display: none;" class="text-center">
+                        <i class="fas fa-check-circle text-success mb-3" style="font-size: 3rem;"></i>
+                        <h5>¡Traducción completada con éxito!</h5>
+                        <p class="text-muted">Se ha creado una nueva copia traducida de este libro.</p>
+                        <button type="button" class="btn btn-success w-100" id="btnGoToTranslation">Ir al libro traducido</button>
+                    </div>
+                </div>
+                <div class="modal-footer" style="border-top: 1px solid #333;">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="btnTranslateCloseBtn">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -905,6 +956,126 @@
                 }
             }
         });
+
+        // Traducción de documentos
+        let translationModal = null;
+        let translationPollInterval = null;
+
+        function abrirModalTraduccion() {
+            if (!documentoActualId) return;
+            
+            // Inicializar modal de Bootstrap si no existe
+            if (!translationModal) {
+                translationModal = new bootstrap.Modal(document.getElementById('translateModal'));
+            }
+            
+            // Resetear vistas del modal
+            document.getElementById('translateFormArea').style.display = 'block';
+            document.getElementById('translateProgressArea').style.display = 'none';
+            document.getElementById('translateSuccessArea').style.display = 'none';
+            
+            // Habilitar botones de cierre
+            document.getElementById('btnTranslateCloseX').style.display = 'block';
+            document.getElementById('btnTranslateCloseBtn').disabled = false;
+            document.getElementById('btnTranslateCloseBtn').style.display = 'block';
+            
+            translationModal.show();
+        }
+
+        async function iniciarTraduccion() {
+            if (!documentoActualId) return;
+            
+            const targetLang = document.getElementById('selectTargetLanguage').value;
+            
+            // Ocultar formulario, mostrar progreso
+            document.getElementById('translateFormArea').style.display = 'none';
+            document.getElementById('translateProgressArea').style.display = 'block';
+            document.getElementById('translateStatusText').textContent = 'Iniciando traducción en el servidor...';
+            document.getElementById('translateProgressBar').style.width = '0%';
+            document.getElementById('translateProgressBar').textContent = '0%';
+            
+            // Deshabilitar cierres para evitar interrupciones
+            document.getElementById('btnTranslateCloseX').style.display = 'none';
+            document.getElementById('btnTranslateCloseBtn').disabled = true;
+            document.getElementById('btnTranslateCloseBtn').style.display = 'none';
+            
+            try {
+                const response = await fetch(`/api/traducir/${documentoActualId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        idioma_destino: targetLang,
+                        usuario: usuario || null
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.job_id) {
+                    // Iniciar polling
+                    const jobId = data.job_id;
+                    monitorearProgresoTraduccion(jobId);
+                } else {
+                    throw new Error(data.error || 'No se pudo iniciar la traducción');
+                }
+            } catch (error) {
+                console.error(error);
+                alert('Error al iniciar traducción: ' + error.message);
+                abrirModalTraduccion(); // Resetear vista
+            }
+        }
+
+        function monitorearProgresoTraduccion(jobId) {
+            if (translationPollInterval) clearInterval(translationPollInterval);
+            
+            translationPollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/traducir/estado/${jobId}`);
+                    const data = await response.json();
+                    
+                    if (!response.ok) throw new Error(data.error || 'Error al consultar estado');
+                    
+                    if (data.estado === 'procesando') {
+                        const total = data.total_paginas || 1;
+                        const procesadas = data.paginas_procesadas || 0;
+                        const pct = Math.round((procesadas / total) * 100);
+                        
+                        document.getElementById('translateProgressBar').style.width = `${pct}%`;
+                        document.getElementById('translateProgressBar').textContent = `${pct}%`;
+                        document.getElementById('translateStatusText').innerHTML = `<i class="fas fa-cog fa-spin"></i> Traduciendo página <strong>${procesadas}</strong> de <strong>${total}</strong>...`;
+                    } 
+                    else if (data.estado === 'completado') {
+                        clearInterval(translationPollInterval);
+                        
+                        document.getElementById('translateProgressArea').style.display = 'none';
+                        document.getElementById('translateSuccessArea').style.display = 'block';
+                        
+                        // Habilitar botón de cierre
+                        document.getElementById('btnTranslateCloseBtn').disabled = false;
+                        document.getElementById('btnTranslateCloseBtn').style.display = 'block';
+                        
+                        // Configurar redirección
+                        const btnGo = document.getElementById('btnGoToTranslation');
+                        btnGo.onclick = () => {
+                            translationModal.hide();
+                            cargarDocumento(data.resultado_id);
+                        };
+                    } 
+                    else if (data.estado === 'error') {
+                        clearInterval(translationPollInterval);
+                        alert('Error durante la traducción: ' + data.error);
+                        abrirModalTraduccion();
+                    }
+                } catch (error) {
+                    console.error(error);
+                    clearInterval(translationPollInterval);
+                    alert('Error en conexión al verificar estado: ' + error.message);
+                    abrirModalTraduccion();
+                }
+            }, 2000);
+        }
 
         // Cargar documentos al iniciar
         window.onload = () => buscarDocumentos(1);

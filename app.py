@@ -16,6 +16,7 @@ import threading
 import uuid
 import requests
 import time
+from flask_caching import Cache
 
 # Cargar variables de entorno
 load_dotenv()

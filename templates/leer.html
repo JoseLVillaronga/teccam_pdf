@@ -44,18 +44,33 @@
         .document-item:hover {
             background-color: #444;
         }
-        .delete-btn {
+        .doc-actions {
             position: absolute;
             right: 10px;
             top: 50%;
             transform: translateY(-50%);
+            display: flex;
+            gap: 6px;
+            z-index: 10;
+        }
+        .edit-btn {
+            background-color: #0d6efd;
+            border: none;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        .edit-btn:hover {
+            background-color: #0b5ed7;
+        }
+        .delete-btn {
             background-color: #dc3545;
             border: none;
             color: white;
             padding: 5px 10px;
             border-radius: 3px;
             cursor: pointer;
-            z-index: 10;
         }
         .delete-btn:hover {
             background-color: #bb2d3b;
@@ -359,6 +374,10 @@
             background-color: #8b2e57;
             color: white;
         }
+        .badge-shared {
+            background-color: #0dcaf0;
+            color: #000;
+        }
     </style>
 </head>
 <body>
@@ -424,6 +443,9 @@
                 </button>
                 <button id="btnTranslate" class="btn btn-sm btn-outline-primary ms-2" onclick="abrirModalTraduccion()" title="Traducir documento">
                     <i class="fas fa-language"></i> Traducir
+                </button>
+                <button id="btnEditDoc" class="btn btn-sm btn-outline-warning ms-2" style="display: none;" onclick="abrirModalEdicionActual()" title="Editar metadatos">
+                    <i class="fas fa-edit"></i> Editar
                 </button>
                 <div class="size-selector">
                     <label for="textSizeSelect"><i class="fas fa-font"></i></label>
@@ -500,6 +522,46 @@
                 </div>
                 <div class="modal-footer" style="border-top: 1px solid #333;">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="btnTranslateCloseBtn">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Edición -->
+    <div class="modal fade" id="editModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="editModalLabel" aria-hidden="true" style="color: #98fb98;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="background-color: #2a2a2a; border: 1px solid #2e8b57; border-radius: 10px;">
+                <div class="modal-header" style="border-bottom: 1px solid #333;">
+                    <h5 class="modal-title" id="editModalLabel"><i class="fas fa-edit"></i> Editar Documento</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" id="btnEditCloseX"></button>
+                </div>
+                <div class="modal-body text-start">
+                    <input type="hidden" id="editDocId">
+                    <div class="mb-3">
+                        <label for="editTitulo" class="form-label">Título</label>
+                        <input type="text" id="editTitulo" class="form-control" placeholder="Título del documento" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editAutor" class="form-label">Autor</label>
+                        <input type="text" id="editAutor" class="form-control" placeholder="Autor del documento" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editTema" class="form-label">Tema</label>
+                        <input type="text" id="editTema" class="form-control" placeholder="Tema del documento" required>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="editEsPublico" onchange="toggleCompartidosField()">
+                        <label class="form-check-label" for="editEsPublico">Hacer documento público</label>
+                    </div>
+                    <div class="mb-3" id="groupCompartidos">
+                        <label for="editUsuariosCompartidos" class="form-label">Compartir con usuarios</label>
+                        <input type="text" id="editUsuariosCompartidos" class="form-control" placeholder="usuario1, usuario2">
+                        <div class="form-text text-muted" style="font-size: 0.85rem;">Separar nombres de usuario con comas. Los usuarios listados podrán ver y leer este documento.</div>
+                    </div>
+                </div>
+                <div class="modal-footer" style="border-top: 1px solid #333;">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="btnEditCloseBtn">Cancelar</button>
+                    <button type="button" class="btn btn-primary" id="btnEditSave" onclick="guardarEdicionDocumento()">Guardar Cambios</button>
                 </div>
             </div>
         </div>
@@ -620,20 +682,46 @@
                     documentos.forEach(doc => {
                         const isPublic = !doc.usuario;
                         const isOwner = doc.usuario === usuario;
+                        const isShared = doc.is_shared;
                         const badge = isPublic ? 
                             '<span class="badge badge-public">Público</span>' : 
-                            (isOwner ? '<span class="badge badge-private">Propio</span>' : '');
+                            (isOwner ? '<span class="badge badge-private">Propio</span>' : 
+                            (isShared ? '<span class="badge badge-shared">Compartido</span>' : ''));
+                        
+                        let actionsHtml = '';
+                        if (doc.can_edit || doc.can_delete) {
+                            actionsHtml = '<div class="doc-actions">';
+                            if (doc.can_edit) {
+                                const tEsc = doc.titulo ? doc.titulo.replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
+                                const aEsc = doc.autor ? doc.autor.replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
+                                const mEsc = doc.tema ? doc.tema.replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
+                                let uStr = '';
+                                if (Array.isArray(doc.usuarios_compartidos)) {
+                                    uStr = doc.usuarios_compartidos.join(', ');
+                                } else if (typeof doc.usuarios_compartidos === 'string') {
+                                    uStr = doc.usuarios_compartidos;
+                                }
+                                const uEsc = uStr ? uStr.replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
+                                actionsHtml += `<button class="edit-btn" onclick="event.stopPropagation(); abrirModalEdicion('${doc._id}', '${tEsc}', '${aEsc}', '${mEsc}', ${isPublic}, '${uEsc}')">
+                                    <i class="fas fa-edit"></i> Editar
+                                </button>`;
+                            }
+                            if (doc.can_delete) {
+                                actionsHtml += `<button class="delete-btn" onclick="event.stopPropagation(); borrarDocumento('${doc._id}')">
+                                    <i class="fas fa-trash"></i> Borrar
+                                </button>`;
+                            }
+                            actionsHtml += '</div>';
+                        }
                         
                         const docElement = document.createElement('div');
                         docElement.className = 'document-item';
                         docElement.innerHTML = `
-                            <div style="margin-right: 50px;">
+                            <div style="margin-right: 140px;">
                                 <h4>${doc.titulo}${badge}</h4>
                                 <p>Autor: ${doc.autor} | Tema: ${doc.tema}</p>
                             </div>
-                            ${doc.can_delete ? `<button class="delete-btn" onclick="event.stopPropagation(); borrarDocumento('${doc._id}')">
-                                Borrar
-                            </button>` : ''}
+                            ${actionsHtml}
                         `;
                         docElement.onclick = () => cargarDocumento(doc._id);
                         searchResults.appendChild(docElement);
@@ -725,8 +813,9 @@
                 document.getElementById('pageLoading').classList.add('show');
                 document.getElementById('markdownContent').innerHTML = '';
 
-                const response = await fetch(`/api/documento/${id}`);
+                const response = await fetch(`/api/documento/${id}?usuario=${usuario}`);
                 const data = await response.json();
+                documentoActualData = data;
                 
                 document.getElementById('documentList').style.display = 'none';
                 const contentDiv = document.getElementById('documentContent');
@@ -736,6 +825,12 @@
                 document.getElementById('markdownContent').innerHTML = DOMPurify.sanitize(data.contenido_html);
                 totalPaginasDoc = data.total_paginas;
                 paginaActual = data.pagina_actual;
+                
+                // Actualizar botón de edición
+                const btnEdit = document.getElementById('btnEditDoc');
+                if (btnEdit) {
+                    btnEdit.style.display = data.can_edit ? 'inline-block' : 'none';
+                }
                 
                 // Actualizar navegación
                 document.getElementById('totalPaginas').textContent = totalPaginasDoc;
@@ -787,7 +882,7 @@
                 document.getElementById('pageLoading').classList.add('show');
                 document.getElementById('markdownContent').style.opacity = '0.3';
                 
-                const response = await fetch(`/api/documento/${documentoActualId}/pagina/${numeroPagina}`);
+                const response = await fetch(`/api/documento/${documentoActualId}/pagina/${numeroPagina}?usuario=${usuario}`);
                 const data = await response.json();
                 
                 document.getElementById('markdownContent').innerHTML = DOMPurify.sanitize(data.contenido_html);
@@ -1075,6 +1170,102 @@
                     abrirModalTraduccion();
                 }
             }, 2000);
+        }
+
+        // Edición de documentos
+        let editModal = null;
+        let documentoActualData = null;
+
+        function toggleCompartidosField() {
+            const esPublico = document.getElementById('editEsPublico').checked;
+            const group = document.getElementById('groupCompartidos');
+            if (group) {
+                group.style.display = esPublico ? 'none' : 'block';
+            }
+        }
+
+        function abrirModalEdicion(id, titulo, autor, tema, esPublico, usuariosCompartidos) {
+            if (!editModal) {
+                editModal = new bootstrap.Modal(document.getElementById('editModal'));
+            }
+            document.getElementById('editDocId').value = id;
+            document.getElementById('editTitulo').value = titulo || '';
+            document.getElementById('editAutor').value = autor || '';
+            document.getElementById('editTema').value = tema || '';
+            document.getElementById('editEsPublico').checked = !!esPublico;
+            document.getElementById('editUsuariosCompartidos').value = usuariosCompartidos || '';
+            
+            toggleCompartidosField();
+            editModal.show();
+        }
+
+        function abrirModalEdicionActual() {
+            if (!documentoActualData || !documentoActualId) return;
+            abrirModalEdicion(
+                documentoActualId,
+                documentoActualData.titulo,
+                documentoActualData.autor,
+                documentoActualData.tema,
+                documentoActualData.es_publico,
+                documentoActualData.usuarios_compartidos
+            );
+        }
+
+        async function guardarEdicionDocumento() {
+            const id = document.getElementById('editDocId').value;
+            const titulo = document.getElementById('editTitulo').value.trim();
+            const autor = document.getElementById('editAutor').value.trim();
+            const tema = document.getElementById('editTema').value.trim();
+            const esPublico = document.getElementById('editEsPublico').checked;
+            const usuariosCompartidos = document.getElementById('editUsuariosCompartidos').value.trim();
+
+            if (!titulo || !autor || !tema) {
+                mostrarToast('Por favor, completa los campos requeridos (Título, Autor y Tema).');
+                return;
+            }
+
+            const btnSave = document.getElementById('btnEditSave');
+            btnSave.disabled = true;
+
+            try {
+                const response = await fetch(`/api/documento/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        titulo: titulo,
+                        autor: autor,
+                        tema: tema,
+                        es_publico: esPublico,
+                        usuarios_compartidos: usuariosCompartidos,
+                        usuario: usuario || null
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.status === 'success') {
+                    mostrarToast('Documento actualizado correctamente');
+                    if (editModal) editModal.hide();
+                    
+                    // Actualizar la lista de búsqueda si está visible
+                    const docList = document.getElementById('documentList');
+                    if (docList && docList.style.display !== 'none') {
+                        buscarDocumentos(paginaBusqueda);
+                    }
+                    
+                    // Si estamos leyendo el documento editado, recargarlo
+                    if (documentoActualId === id) {
+                        cargarDocumento(id);
+                    }
+                } else {
+                    mostrarToast('Error al actualizar: ' + (result.error || result.message));
+                }
+            } catch (error) {
+                console.error('Error al guardar edición:', error);
+                mostrarToast('Error de conexión al actualizar');
+            } finally {
+                btnSave.disabled = false;
+            }
         }
 
         // Cargar documentos al iniciar

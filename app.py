@@ -53,6 +53,7 @@ def asegurar_indices():
     try:
         collection.create_index([('titulo', 'text'), ('autor', 'text'), ('tema', 'text')])
         collection.create_index([('usuario', 1)])
+        collection.create_index([('usuarios_compartidos', 1)])
         collection.create_index([('fecha_creacion', -1)])
         posiciones_collection.create_index([
             ('documento_id', 1), ('usuario', 1)
@@ -168,10 +169,11 @@ def buscar_documentos():
     
     # Filtrar documentos según el usuario
     if usuario:
-        # Si hay usuario, mostrar documentos públicos o del usuario
+        # Mostrar documentos públicos, propios del usuario o compartidos con él
         query['$or'] = [
-            {'usuario': {'$exists': False}},  # documentos públicos
-            {'usuario': usuario}              # documentos del usuario
+            {'usuario': {'$exists': False}},       # documentos públicos
+            {'usuario': usuario},                   # documentos del usuario
+            {'usuarios_compartidos': usuario}       # documentos compartidos con el usuario
         ]
     else:
         # Si no hay usuario, mostrar solo documentos públicos
@@ -197,24 +199,32 @@ def buscar_documentos():
             skip = (pagina - 1) * resultados_por_pagina
             documentos = list(collection.find(
                 query,
-                {'titulo': 1, 'autor': 1, 'tema': 1, 'usuario': 1}
+                {'titulo': 1, 'autor': 1, 'tema': 1, 'usuario': 1, 'usuarios_compartidos': 1}
             ).sort(sort_field, sort_direction).skip(skip).limit(resultados_por_pagina))
             
+            # Convertir ObjectId a string para serialización y almacenamiento en caché
+            for doc in documentos:
+                doc['_id'] = str(doc['_id'])
+
             # Guardar en caché
             guardar_cache(cache_key, documentos)
             guardar_cache(cache_key_total, total)
-        except PyMongoError as e:
+        except Exception as e:
+            print(f"Error en buscar_documentos: {e}")
             return jsonify({'error': 'Error de base de datos', 'mensaje': str(e)}), 500
-    
-    # Convertir ObjectId a string para serialización JSON
+
+    # Añadir información de permisos y formatear usuarios_compartidos
+    is_editor = es_editor(usuario) if usuario else False
     for doc in documentos:
-        doc['_id'] = str(doc['_id'])
-    
-    # Añadir información de permisos si hay usuario
-    if usuario:
-        is_editor = es_editor(usuario)
-        for doc in documentos:
-            doc['can_delete'] = is_editor or (doc.get('usuario') == usuario)
+        doc_user = doc.get('usuario')
+        doc_shared = doc.get('usuarios_compartidos') or []
+        if not isinstance(doc_shared, list):
+            doc_shared = [str(doc_shared)]
+        if usuario:
+            doc['can_delete'] = is_editor or (doc_user == usuario)
+            doc['can_edit'] = is_editor or (doc_user == usuario)
+            doc['is_shared'] = (doc_user is not None) and (doc_user != usuario) and (usuario in doc_shared)
+        doc['usuarios_compartidos'] = ', '.join(doc_shared)
     
     total_paginas = max(1, math.ceil(total / resultados_por_pagina))
     
@@ -226,11 +236,24 @@ def buscar_documentos():
         'resultados_por_pagina': resultados_por_pagina
     })
 
-@app.route('/api/documento/<id>', methods=['GET', 'DELETE'])
+@app.route('/api/documento/<id>', methods=['GET', 'DELETE', 'PUT'])
 def obtener_documento(id):
-    """API para obtener o eliminar un documento específico por ID."""
+    """API para obtener, eliminar o editar un documento específico por ID."""
     try:
+        usuario = request.args.get('usuario', '')
+        if not usuario and request.is_json and request.json:
+            usuario = request.json.get('usuario', '')
+
         if request.method == 'DELETE':
+            documento = collection.find_one({'_id': ObjectId(id)})
+            if not documento:
+                return jsonify({'error': 'Documento no encontrado'}), 404
+            
+            is_editor = es_editor(usuario) if usuario else False
+            doc_usuario = documento.get('usuario')
+            if not (is_editor or (doc_usuario is not None and doc_usuario == usuario)):
+                return jsonify({'error': 'No tiene permisos para eliminar este documento'}), 403
+
             resultado = collection.delete_one({'_id': ObjectId(id)})
             if resultado.deleted_count > 0:
                 limpiar_cache()  # Invalidar caché al eliminar
@@ -240,9 +263,69 @@ def obtener_documento(id):
                 })
             else:
                 return jsonify({'error': 'Documento no encontrado'}), 404
-        else:  # GET - ahora devuelve el texto en markdown (sin convertir a HTML)
-            # Intentar obtener del caché
-            cache_key = f"documento:{id}"
+
+        elif request.method == 'PUT':
+            datos = request.json or {}
+            documento = collection.find_one({'_id': ObjectId(id)})
+            if not documento:
+                return jsonify({'error': 'Documento no encontrado'}), 404
+
+            is_editor = es_editor(usuario) if usuario else False
+            doc_usuario = documento.get('usuario')
+            if not (is_editor or (doc_usuario is not None and doc_usuario == usuario)):
+                return jsonify({'error': 'No tiene permisos para editar este documento'}), 403
+
+            nuevo_titulo = datos.get('titulo', '').strip()
+            nuevo_autor = datos.get('autor', '').strip()
+            nuevo_tema = datos.get('tema', '').strip()
+            es_publico = datos.get('es_publico')
+
+            if not nuevo_titulo or not nuevo_autor or not nuevo_tema:
+                return jsonify({'error': 'Título, autor y tema son campos obligatorios'}), 400
+
+            # Procesar usuarios compartidos
+            raw_compartidos = datos.get('usuarios_compartidos', '')
+            if isinstance(raw_compartidos, list):
+                lista_compartidos = [str(u).strip() for u in raw_compartidos if str(u).strip()]
+            else:
+                lista_compartidos = [u.strip() for u in str(raw_compartidos).split(',') if u.strip()]
+            lista_compartidos = list(dict.fromkeys(lista_compartidos))
+
+            update_fields = {
+                'titulo': nuevo_titulo,
+                'autor': nuevo_autor,
+                'tema': nuevo_tema
+            }
+            unset_fields = {}
+
+            if es_publico is True:
+                unset_fields['usuario'] = ""
+                unset_fields['usuarios_compartidos'] = ""
+            elif es_publico is False:
+                if doc_usuario:
+                    update_fields['usuario'] = doc_usuario
+                else:
+                    update_fields['usuario'] = usuario
+
+                if lista_compartidos:
+                    update_fields['usuarios_compartidos'] = lista_compartidos
+                else:
+                    unset_fields['usuarios_compartidos'] = ""
+
+            update_op = {'$set': update_fields}
+            if unset_fields:
+                update_op['$unset'] = unset_fields
+
+            collection.update_one({'_id': ObjectId(id)}, update_op)
+            limpiar_cache()
+
+            return jsonify({
+                'status': 'success',
+                'message': 'Documento actualizado exitosamente'
+            })
+
+        else:  # GET - devuelve el texto en markdown y metadatos
+            cache_key = f"documento:{id}:{usuario}"
             cached = obtener_cache(cache_key)
             
             if cached:
@@ -250,6 +333,14 @@ def obtener_documento(id):
             
             documento = collection.find_one({'_id': ObjectId(id)})
             if documento:
+                doc_usuario = documento.get('usuario')
+                doc_shared = documento.get('usuarios_compartidos', [])
+                is_editor = es_editor(usuario) if usuario else False
+                has_access = (doc_usuario is None) or (doc_usuario == usuario) or is_editor or (usuario in doc_shared)
+                
+                if not has_access:
+                    return jsonify({'error': 'No tiene permisos para acceder a este documento'}), 403
+
                 texto_markdown = documento['texto']
                 
                 # Dividir el texto en páginas
@@ -257,13 +348,23 @@ def obtener_documento(id):
                 total_paginas = len(paginas_markdown)
                 
                 # Convertir solo la primera página a HTML
-                # Usamos extras=['break-on-newline'] para preservar saltos de línea simples (\n -> <br>)
                 primera_pagina_html = markdown2.markdown(paginas_markdown[0], extras=['break-on-newline']) if paginas_markdown else ''
                 
+                can_edit = is_editor or (doc_usuario is not None and doc_usuario == usuario)
+                can_delete = is_editor or (doc_usuario is not None and doc_usuario == usuario)
+                is_shared = (doc_usuario is not None) and (doc_usuario != usuario) and (usuario in doc_shared)
+
                 resultado = {
+                    'id': str(documento['_id']),
                     'titulo': documento['titulo'],
                     'autor': documento['autor'],
                     'tema': documento['tema'],
+                    'usuario': doc_usuario,
+                    'es_publico': doc_usuario is None,
+                    'usuarios_compartidos': ', '.join(doc_shared),
+                    'is_shared': is_shared,
+                    'can_edit': can_edit,
+                    'can_delete': can_delete,
                     'total_paginas': total_paginas,
                     'contenido_html': primera_pagina_html,
                     'pagina_actual': 1
@@ -284,8 +385,8 @@ def obtener_documento(id):
 def obtener_pagina_documento(id, numero_pagina):
     """API para obtener una página específica de un documento."""
     try:
-        # Intentar obtener del caché
-        cache_key = f"documento:{id}:pagina:{numero_pagina}"
+        usuario = request.args.get('usuario', '')
+        cache_key = f"documento:{id}:pagina:{numero_pagina}:{usuario}"
         cached = obtener_cache(cache_key)
         
         if cached:
@@ -293,11 +394,19 @@ def obtener_pagina_documento(id, numero_pagina):
         
         documento = collection.find_one(
             {'_id': ObjectId(id)},
-            {'texto': 1}  # Solo traer el campo texto
+            {'texto': 1, 'usuario': 1, 'usuarios_compartidos': 1}
         )
         
         if not documento:
             return jsonify({'error': 'Documento no encontrado'}), 404
+        
+        doc_usuario = documento.get('usuario')
+        doc_shared = documento.get('usuarios_compartidos', [])
+        is_editor = es_editor(usuario) if usuario else False
+        has_access = (doc_usuario is None) or (doc_usuario == usuario) or is_editor or (usuario in doc_shared)
+        
+        if not has_access:
+            return jsonify({'error': 'No tiene permisos para acceder a este documento'}), 403
         
         paginas_markdown = dividir_en_paginas(documento['texto'])
         total_paginas = len(paginas_markdown)

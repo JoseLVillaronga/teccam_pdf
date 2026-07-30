@@ -8,7 +8,9 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - **Versión**: 1.0.0
 - **Estado**: Producción
 
-## Novedades recientes (Junio 2026)
+## Novedades recientes (Julio 2026)
+- **Compartir Documentos Privados**: se permite compartir documentos privados con uno o varios usuarios específicos (separados por coma). Los usuarios receptores pueden buscar y leer el documento compartido (con badge "Compartido").
+- **Edición de Documentos (Metadatos y Visibilidad)**: los usuarios creadores y los editores declarados en `EDITORES` pueden modificar el Título, Autor, Tema, usuarios compartidos y conmutar la visibilidad entre Público y Privado directamente desde la interfaz.
 - **Optimización de rendimiento**: paginación del contenido de documentos en páginas más pequeñas (~50 líneas cada una), con carga bajo demanda. Solo se convierte a HTML la página que se está visualizando, no el documento completo.
 - **Caché en disco (Persistente y Concurrente)**: integración de `Flask-Caching` con almacenamiento temporal en disco (FileSystemCache) durante 5 minutos. Permite un funcionamiento óptimo y consistente en entornos concurrentes y de producción multi-proceso (como Gunicorn/uWSGI).
 - **Índices MongoDB**: se crearon índices en `titulo`, `autor`, `tema`, `usuario` y `fecha_creacion` para acelerar las búsquedas.
@@ -77,24 +79,25 @@ Descripción de las variables:
 ## Sistema de Permisos
 
 ### Tipos de Documentos
-- **Documentos Públicos**: Visibles para todos los usuarios
-- **Documentos Privados**: Solo visibles para su propietario
+- **Documentos Públicos**: Visibles para todos los usuarios.
+- **Documentos Privados**: Visibles únicamente para su propietario/creador.
+- **Documentos Compartidos**: Documentos privados que el propietario ha compartido explícitamente con usuarios específicos (separados por comas), quienes tienen acceso de lectura (identificados con el badge "Compartido").
 
 ### Roles de Usuario
 1. **Usuario Normal**
-   - Puede ver todos los documentos públicos
-   - Puede ver sus documentos privados
-   - Puede borrar solo sus propios documentos
-   - Identificación visual de documentos propios vs. públicos
+   - Puede ver todos los documentos públicos.
+   - Puede ver sus documentos privados y los documentos compartidos directamente con él.
+   - Puede borrar, editar y compartir solo sus propios documentos privados (modificando título, autor, tema, visibilidad público/privado y usuarios compartidos).
+   - Identificación visual de documentos mediante badges: "Público", "Propio" o "Compartido".
 
 2. **Usuario Editor**
-   - Todos los permisos de usuario normal
-   - Puede borrar cualquier documento (público o privado)
-   - Definido en la variable de entorno `EDITORES`
+   - Todos los permisos de usuario normal.
+   - Puede borrar, editar y gestionar la compartición de cualquier documento (público o privado).
+   - Definido en la variable de entorno `EDITORES`.
 
 ### Gestión de Permisos
 - La interfaz muestra badges indicando si un documento es "Público" o "Propio"
-- El botón de borrado solo aparece cuando el usuario tiene permisos
+- Los botones de borrado y edición solo aparecen cuando el usuario tiene permisos
 - La verificación de permisos se realiza tanto en frontend como en backend
 - Los editores se definen en el archivo `.env` mediante la variable `EDITORES`
 
@@ -180,8 +183,9 @@ http://localhost:5018/?url=https://ejemplo.com/documento.pdf&usuario=nombre_usua
    - Input numérico para ir a una página específica
    - Teclas de flecha izquierda (anterior) y derecha (siguiente)
 6. Puedes volver a la página principal con el botón "Volver al Inicio" (mantiene usuario si aplica).
-7. Con usuario definido:
+7. Con usuario definido o rol de Editor:
    - Ver documentos públicos y propios privados
+   - Editar título, autor, tema y cambiar visibilidad Público/Privado (si es creador o editor)
    - Doble click en el texto para guardar posición de lectura
    - Ctrl+S para guardar posición de lectura
    - Al reabrir, se restaura automáticamente la última posición
@@ -235,7 +239,7 @@ journalctl --user -u teccam_pdf.service -f
 - `/`: Página principal de extracción
 - `/leer`: Interfaz de lectura
 - `/api/buscar`: API de búsqueda de documentos (con paginación: `pagina` y `limite`)
-- `/api/documento/<id>`: API para obtener documento completo o eliminarlo (GET/DELETE)
+- `/api/documento/<id>`: API para obtener documento (GET), eliminarlo (DELETE) o editar sus metadatos/visibilidad (PUT)
 - `/api/documento/<id>/pagina/<n>`: API para obtener una página específica del documento (GET)
 - `/procesar`: Endpoint de procesamiento de documentos (POST)
 - `/api/posicion/<documento_id>`: API para gestionar posiciones de lectura (GET/POST)

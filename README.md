@@ -8,7 +8,18 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - **Versión**: 1.0.0
 - **Estado**: Producción
 
-## Novedades recientes (Julio 2026)
+## Novedades recientes (Agosto 2026)
+- **Extracción y visualización de imágenes**: Se agregó la extracción automática de imágenes incrustadas en documentos PDF (vía PyMuPDF) y la descarga de imágenes en páginas web. Los archivos se guardan organizados en `static/documentos/<doc_id>/` y se referencian en el texto Markdown con estilos adaptados al modo oscuro. Al eliminar un documento, se limpia automáticamente su carpeta de imágenes del disco.
+  - *Motivo*: Permitir la visualización completa de documentos técnicos, manuales y artículos que dependen de figuras, diagramas y capturas para su comprensión.
+- **Recomposición de palabras partidas con guión (`-`) en PDFs**: Se corrigió el algoritmo de limpieza de texto para detectar cuando una palabra se corta al final de la línea física del PDF, extrayendo la sílaba inicial de la línea siguiente y fusionándola a la palabra original (ej: `investiga-` + `ción` $\rightarrow$ `investigación`).
+  - *Motivo*: Evitar que las palabras quedaran truncadas en dos líneas separadas sin el guión visual en el lector web.
+- **Persistencia de tareas de traducción en MongoDB con TTL**: El estado de las traducciones asíncronas con DeepSeek se migró desde un diccionario en memoria RAM a la colección `tareas_traduccion` en MongoDB, con un índice de expiración automática (TTL) de 24 horas (`expireAfterSeconds=86400`).
+  - *Motivo*: Garantizar consistencia total en entornos de producción multi-proceso (como Gunicorn/uWSGI), donde diferentes *workers* atienden las consultas de estado de traducción.
+- **Renderizado seguro en el Lector (Fix de comillas y caracteres especiales)**: Se reescribió la función de renderizado de la lista de documentos en JavaScript (`leer.html`) para utilizar creación programática del DOM (`document.createElement` y eventos nativos) en lugar de interpolación de cadenas en atributos `onclick`.
+  - *Motivo*: Evitar errores de sintaxis (`Uncaught SyntaxError`) y bloqueos en la interfaz cuando los títulos o autores contienen comillas simples (`'`), dobles (`"`) o apóstrofes.
+- **Modernización y limpieza de código**: Se eliminaron las llamadas dinámicas a `pip install` en tiempo de ejecución en los extractores y se sustituyó `datetime.utcnow()` (obsoleto en Python 3.12+) por `datetime.now(timezone.utc)`.
+
+## Novedades anteriores (Julio 2026)
 - **Compartir Documentos Privados**: se permite compartir documentos privados con uno o varios usuarios específicos (separados por coma). Los usuarios receptores pueden buscar y leer el documento compartido (con badge "Compartido").
 - **Edición de Documentos (Metadatos y Visibilidad)**: los usuarios creadores y los editores declarados en `EDITORES` pueden modificar el Título, Autor, Tema, usuarios compartidos y conmutar la visibilidad entre Público y Privado directamente desde la interfaz.
 - **Optimización de rendimiento**: paginación del contenido de documentos en páginas más pequeñas (~50 líneas cada una), con carga bajo demanda. Solo se convierte a HTML la página que se está visualizando, no el documento completo.
@@ -21,7 +32,6 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - **Indicadores de carga**: se agregaron spinners mientras se cargan las páginas del documento.
 - **Scroll automático**: al cambiar de página, el scroll vuelve al inicio automáticamente.
 - **Seguridad (Sanitización XSS)**: integración de `DOMPurify` en el lector para limpiar y sanitizar el HTML de los documentos extraídos antes de renderizarse en pantalla, neutralizando código malicioso.
-- **Extracción y visualización de imágenes**: extracción automática de imágenes en documentos PDF y páginas web guardadas en `static/documentos/<id>/` e incrustadas de forma responsive en el Markdown del documento.
 - **Traducción de libros con DeepSeek**: integración de la API de DeepSeek (`deepseek-v4-flash`) para traducir títulos, temas y textos de libros ya cargados a Español, Inglés o Portugués, preservando la estructura Markdown y el formato original de forma asíncrona (con barra de progreso).
 
 ## Novedades anteriores (Abril 2025)
@@ -283,6 +293,15 @@ journalctl --user -u teccam_pdf.service -f
   - usuario: Propietario del marcador
   - posicion: Valor del scroll
   - ultima_actualizacion: Timestamp
+
+- **tareas_traduccion**: Almacena el estado y avance de las traducciones asíncronas
+  - job_id: Identificador único del trabajo de traducción (UUID)
+  - estado: Estado actual (`procesando`, `completado`, `error`)
+  - paginas_procesadas: Cantidad de páginas traducidas
+  - total_paginas: Total de páginas del documento
+  - resultado_id: ID del nuevo documento traducido en MongoDB
+  - error: Mensaje de error en caso de fallo
+  - fecha_creacion: Timestamp con índice TTL de 24 horas (`expireAfterSeconds=86400`)
 
 ## Integración con Sistemas Externos
 

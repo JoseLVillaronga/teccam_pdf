@@ -159,6 +159,16 @@
             margin-left: 0;
             color: #7fffd4;
         }
+        .markdown-content img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 25px auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+            border: 1px solid #444;
+            background-color: #222;
+        }
         
         .toast-container {
             position: fixed;
@@ -683,46 +693,73 @@
                         const isPublic = !doc.usuario;
                         const isOwner = doc.usuario === usuario;
                         const isShared = doc.is_shared;
-                        const badge = isPublic ? 
-                            '<span class="badge badge-public">Público</span>' : 
-                            (isOwner ? '<span class="badge badge-private">Propio</span>' : 
-                            (isShared ? '<span class="badge badge-shared">Compartido</span>' : ''));
-                        
-                        let actionsHtml = '';
-                        if (doc.can_edit || doc.can_delete) {
-                            actionsHtml = '<div class="doc-actions">';
-                            if (doc.can_edit) {
-                                const tEsc = doc.titulo ? doc.titulo.replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
-                                const aEsc = doc.autor ? doc.autor.replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
-                                const mEsc = doc.tema ? doc.tema.replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
-                                let uStr = '';
-                                if (Array.isArray(doc.usuarios_compartidos)) {
-                                    uStr = doc.usuarios_compartidos.join(', ');
-                                } else if (typeof doc.usuarios_compartidos === 'string') {
-                                    uStr = doc.usuarios_compartidos;
-                                }
-                                const uEsc = uStr ? uStr.replace(/'/g, "\\'").replace(/"/g, '&quot;') : '';
-                                actionsHtml += `<button class="edit-btn" onclick="event.stopPropagation(); abrirModalEdicion('${doc._id}', '${tEsc}', '${aEsc}', '${mEsc}', ${isPublic}, '${uEsc}')">
-                                    <i class="fas fa-edit"></i> Editar
-                                </button>`;
-                            }
-                            if (doc.can_delete) {
-                                actionsHtml += `<button class="delete-btn" onclick="event.stopPropagation(); borrarDocumento('${doc._id}')">
-                                    <i class="fas fa-trash"></i> Borrar
-                                </button>`;
-                            }
-                            actionsHtml += '</div>';
-                        }
                         
                         const docElement = document.createElement('div');
                         docElement.className = 'document-item';
-                        docElement.innerHTML = `
-                            <div style="margin-right: 140px;">
-                                <h4>${doc.titulo}${badge}</h4>
-                                <p>Autor: ${doc.autor} | Tema: ${doc.tema}</p>
-                            </div>
-                            ${actionsHtml}
-                        `;
+
+                        const infoDiv = document.createElement('div');
+                        infoDiv.style.marginRight = '140px';
+
+                        const h4 = document.createElement('h4');
+                        h4.textContent = (doc.titulo || '') + ' ';
+                        
+                        const badgeSpan = document.createElement('span');
+                        if (isPublic) {
+                            badgeSpan.className = 'badge badge-public';
+                            badgeSpan.textContent = 'Público';
+                            h4.appendChild(badgeSpan);
+                        } else if (isOwner) {
+                            badgeSpan.className = 'badge badge-private';
+                            badgeSpan.textContent = 'Propio';
+                            h4.appendChild(badgeSpan);
+                        } else if (isShared) {
+                            badgeSpan.className = 'badge badge-shared';
+                            badgeSpan.textContent = 'Compartido';
+                            h4.appendChild(badgeSpan);
+                        }
+
+                        const p = document.createElement('p');
+                        p.textContent = `Autor: ${doc.autor || ''} | Tema: ${doc.tema || ''}`;
+
+                        infoDiv.appendChild(h4);
+                        infoDiv.appendChild(p);
+                        docElement.appendChild(infoDiv);
+
+                        if (doc.can_edit || doc.can_delete) {
+                            const actionsDiv = document.createElement('div');
+                            actionsDiv.className = 'doc-actions';
+
+                            if (doc.can_edit) {
+                                const editBtn = document.createElement('button');
+                                editBtn.className = 'edit-btn';
+                                editBtn.innerHTML = '<i class="fas fa-edit"></i> Editar';
+                                editBtn.onclick = (e) => {
+                                    e.stopPropagation();
+                                    let uStr = '';
+                                    if (Array.isArray(doc.usuarios_compartidos)) {
+                                        uStr = doc.usuarios_compartidos.join(', ');
+                                    } else if (typeof doc.usuarios_compartidos === 'string') {
+                                        uStr = doc.usuarios_compartidos;
+                                    }
+                                    abrirModalEdicion(doc._id, doc.titulo, doc.autor, doc.tema, isPublic, uStr);
+                                };
+                                actionsDiv.appendChild(editBtn);
+                            }
+
+                            if (doc.can_delete) {
+                                const deleteBtn = document.createElement('button');
+                                deleteBtn.className = 'delete-btn';
+                                deleteBtn.innerHTML = '<i class="fas fa-trash"></i> Borrar';
+                                deleteBtn.onclick = (e) => {
+                                    e.stopPropagation();
+                                    borrarDocumento(doc._id);
+                                };
+                                actionsDiv.appendChild(deleteBtn);
+                            }
+
+                            docElement.appendChild(actionsDiv);
+                        }
+
                         docElement.onclick = () => cargarDocumento(doc._id);
                         searchResults.appendChild(docElement);
                     });

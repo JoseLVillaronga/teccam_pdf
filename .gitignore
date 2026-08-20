@@ -2,3 +2,5 @@
 __pycache__/
 venv/
 flask_cache/
+static/documentos/
+

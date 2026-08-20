@@ -21,6 +21,7 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - **Indicadores de carga**: se agregaron spinners mientras se cargan las páginas del documento.
 - **Scroll automático**: al cambiar de página, el scroll vuelve al inicio automáticamente.
 - **Seguridad (Sanitización XSS)**: integración de `DOMPurify` en el lector para limpiar y sanitizar el HTML de los documentos extraídos antes de renderizarse en pantalla, neutralizando código malicioso.
+- **Extracción y visualización de imágenes**: extracción automática de imágenes en documentos PDF y páginas web guardadas en `static/documentos/<id>/` e incrustadas de forma responsive en el Markdown del documento.
 - **Traducción de libros con DeepSeek**: integración de la API de DeepSeek (`deepseek-v4-flash`) para traducir títulos, temas y textos de libros ya cargados a Español, Inglés o Portugués, preservando la estructura Markdown y el formato original de forma asíncrona (con barra de progreso).
 
 ## Novedades anteriores (Abril 2025)
@@ -28,8 +29,9 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - La página principal soporta modo oscuro o claro automático, adaptándose a la configuración del sistema operativo/navegador.
 
 ## Características
-- Extracción de texto de archivos PDF
-- Extracción de texto de páginas web
+- Extracción de texto e imágenes de archivos PDF
+- Extracción de texto e imágenes de páginas web
+
 - Conversión automática a formato Markdown
 - Traducción inteligente de documentos (Español/Inglés/Portugués) usando la API de DeepSeek
 - Almacenamiento en MongoDB

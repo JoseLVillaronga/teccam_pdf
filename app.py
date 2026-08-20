@@ -1,7 +1,9 @@
 from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 import os
-import datetime
+import shutil
+from datetime import datetime, timezone
+
 from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from extractor_html import extraer_texto_html_markdown
@@ -47,6 +49,7 @@ client = MongoClient(
 db = client.teccam_pdf
 collection = db.documentos
 posiciones_collection = db.posiciones_lectura
+tareas_collection = db.tareas_traduccion
 
 # Crear índices para acelerar búsquedas
 def asegurar_indices():
@@ -58,6 +61,9 @@ def asegurar_indices():
         posiciones_collection.create_index([
             ('documento_id', 1), ('usuario', 1)
         ], unique=True)
+        tareas_collection.create_index([('job_id', 1)], unique=True)
+        # Índice TTL para limpiar tareas de traducción después de 24 horas (86400 segundos)
+        tareas_collection.create_index([('fecha_creacion', 1)], expireAfterSeconds=86400)
         print("Índices creados/verificados correctamente")
     except Exception as e:
         print(f"Error al crear índices: {e}")
@@ -73,13 +79,48 @@ cache_config = {
 }
 cache = Cache(app, config=cache_config)
 
-# Tareas de traducción activas e idiomas soportados
-tareas_traduccion = {}
+# Idiomas soportados
 IDIOMAS_MAP = {
     'es': 'Español',
     'en': 'Inglés',
     'pt': 'Portugués'
 }
+
+def actualizar_tarea_traduccion(job_id, estado, paginas_procesadas=0, total_paginas=0, resultado_id=None, error=None):
+    """Actualiza o inserta el estado de una tarea de traducción en MongoDB."""
+    try:
+        tareas_collection.update_one(
+            {'job_id': job_id},
+            {
+                '$set': {
+                    'job_id': job_id,
+                    'estado': estado,
+                    'paginas_procesadas': paginas_procesadas,
+                    'total_paginas': total_paginas,
+                    'resultado_id': resultado_id,
+                    'error': error,
+                    'fecha_actualizacion': datetime.now(timezone.utc)
+                },
+                '$setOnInsert': {
+                    'fecha_creacion': datetime.now(timezone.utc)
+                }
+            },
+            upsert=True
+        )
+    except Exception as e:
+        print(f"Error al actualizar tarea de traducción {job_id}: {e}")
+
+def obtener_tarea_traduccion(job_id):
+    """Obtiene el estado de una tarea de traducción desde MongoDB."""
+    try:
+        tarea = tareas_collection.find_one(
+            {'job_id': job_id},
+            {'_id': 0, 'fecha_creacion': 0, 'fecha_actualizacion': 0}
+        )
+        return tarea
+    except Exception as e:
+        print(f"Error al obtener tarea de traducción {job_id}: {e}")
+        return None
 
 def obtener_cache(key):
     """Obtiene un valor del caché si no ha expirado o si existe en disco."""
@@ -257,6 +298,15 @@ def obtener_documento(id):
             resultado = collection.delete_one({'_id': ObjectId(id)})
             if resultado.deleted_count > 0:
                 limpiar_cache()  # Invalidar caché al eliminar
+
+                # Eliminar carpeta de imágenes asociadas si existe
+                doc_dir = os.path.join(app.root_path, 'static', 'documentos', str(id))
+                if os.path.exists(doc_dir):
+                    try:
+                        shutil.rmtree(doc_dir)
+                    except Exception as e_del:
+                        print(f"Error al eliminar carpeta de imágenes {doc_dir}: {e_del}")
+
                 return jsonify({
                     'status': 'success',
                     'message': 'Documento eliminado exitosamente'
@@ -460,7 +510,7 @@ def manejar_posicion(documento_id):
                     '$set': {
                         'pagina': pagina,
                         'posicion': scroll_pos,
-                        'ultima_actualizacion': datetime.datetime.utcnow()
+                        'ultima_actualizacion': datetime.now(timezone.utc)
                     }
                 },
                 upsert=True
@@ -502,6 +552,11 @@ def procesar():
         usuario = request.form.get('usuario', '')
         es_publico = request.form.get('es_publico') == 'true'
 
+        # Generar ID previo del documento para asociar imágenes
+        doc_id = str(ObjectId())
+        doc_dir = os.path.join(app.root_path, 'static', 'documentos', doc_id)
+        url_base_imagenes = f"/static/documentos/{doc_id}"
+
         # Verificar si se subió un archivo o se ingresó una URL
         archivo = request.files.get('archivo_pdf')
         url = request.form.get('url', '')
@@ -510,14 +565,30 @@ def procesar():
             # Procesar archivo PDF subido
             archivo_bytes = archivo.read()
             nombre_archivo = archivo.filename
-            resultado = extraer_texto_pdf_archivo(archivo_bytes, nombre_archivo)
+            resultado = extraer_texto_pdf_archivo(
+                archivo_bytes,
+                nombre_archivo,
+                doc_id=doc_id,
+                imagenes_dir=doc_dir,
+                url_base_imagenes=url_base_imagenes
+            )
             url_origen = f"archivo_local:{nombre_archivo}"
         elif url:
             # Extraer el texto según el tipo de URL
             if es_pdf(url):
-                resultado = extraer_texto_pdf_markdown(url)
+                resultado = extraer_texto_pdf_markdown(
+                    url,
+                    doc_id=doc_id,
+                    imagenes_dir=doc_dir,
+                    url_base_imagenes=url_base_imagenes
+                )
             else:
-                resultado = extraer_texto_html_markdown(url)
+                resultado = extraer_texto_html_markdown(
+                    url,
+                    doc_id=doc_id,
+                    imagenes_dir=doc_dir,
+                    url_base_imagenes=url_base_imagenes
+                )
             url_origen = url
         else:
             return jsonify({
@@ -525,14 +596,22 @@ def procesar():
                 'message': 'Debe proporcionar una URL o subir un archivo PDF'
             }), 400
 
+        # Si el directorio de imágenes se creó pero quedó vacío, lo limpiamos
+        if os.path.exists(doc_dir) and not os.listdir(doc_dir):
+            try:
+                os.rmdir(doc_dir)
+            except Exception:
+                pass
+
         # Preparar documento para MongoDB
         documento = {
+            '_id': ObjectId(doc_id),
             'url': url_origen,
             'titulo': titulo,
             'autor': autor,
             'tema': tema,
             'texto': resultado['texto'],
-            'fecha_creacion': datetime.datetime.utcnow()
+            'fecha_creacion': datetime.now(timezone.utc)
         }
 
         # Solo agregar usuario si no es público y se proporcionó un usuario
@@ -566,13 +645,14 @@ def ejecutar_traduccion(original_id, idioma_destino, job_id, usuario=None):
         # 1. Obtener el documento original
         doc = collection.find_one({'_id': ObjectId(original_id)})
         if not doc:
-            tareas_traduccion[job_id] = {
-                'estado': 'error',
-                'paginas_procesadas': 0,
-                'total_paginas': 0,
-                'resultado_id': None,
-                'error': 'Documento original no encontrado'
-            }
+            actualizar_tarea_traduccion(
+                job_id,
+                estado='error',
+                paginas_procesadas=0,
+                total_paginas=0,
+                resultado_id=None,
+                error='Documento original no encontrado'
+            )
             return
 
         api_key = os.getenv('OPENAI_API_KEY')
@@ -580,13 +660,14 @@ def ejecutar_traduccion(original_id, idioma_destino, job_id, usuario=None):
         model = os.getenv('OPENAI_MODEL', 'deepseek-v4-flash')
 
         if not api_key:
-            tareas_traduccion[job_id] = {
-                'estado': 'error',
-                'paginas_procesadas': 0,
-                'total_paginas': 0,
-                'resultado_id': None,
-                'error': 'API key de DeepSeek (OPENAI_API_KEY) no configurada en .env'
-            }
+            actualizar_tarea_traduccion(
+                job_id,
+                estado='error',
+                paginas_procesadas=0,
+                total_paginas=0,
+                resultado_id=None,
+                error='API key de DeepSeek (OPENAI_API_KEY) no configurada en .env'
+            )
             return
 
         nombre_idioma = IDIOMAS_MAP.get(idioma_destino, idioma_destino)
@@ -641,20 +722,26 @@ def ejecutar_traduccion(original_id, idioma_destino, job_id, usuario=None):
         paginas_originales = dividir_en_paginas(doc['texto'])
         total_paginas = len(paginas_originales)
         
-        tareas_traduccion[job_id] = {
-            'estado': 'procesando',
-            'paginas_procesadas': 0,
-            'total_paginas': total_paginas,
-            'resultado_id': None,
-            'error': None
-        }
+        actualizar_tarea_traduccion(
+            job_id,
+            estado='procesando',
+            paginas_procesadas=0,
+            total_paginas=total_paginas,
+            resultado_id=None,
+            error=None
+        )
 
         paginas_traducidas = []
         
         for idx, pagina in enumerate(paginas_originales):
             if not pagina.strip():
                 paginas_traducidas.append('')
-                tareas_traduccion[job_id]['paginas_procesadas'] = idx + 1
+                actualizar_tarea_traduccion(
+                    job_id,
+                    estado='procesando',
+                    paginas_procesadas=idx + 1,
+                    total_paginas=total_paginas
+                )
                 continue
                 
             prompt_pagina = (
@@ -689,16 +776,22 @@ def ejecutar_traduccion(original_id, idioma_destino, job_id, usuario=None):
                     time.sleep(2)
             
             if not exito:
-                tareas_traduccion[job_id] = {
-                    'estado': 'error',
-                    'paginas_procesadas': idx,
-                    'total_paginas': total_paginas,
-                    'resultado_id': None,
-                    'error': f'Error en la traducción de la página {idx + 1}: {error_msg}'
-                }
+                actualizar_tarea_traduccion(
+                    job_id,
+                    estado='error',
+                    paginas_procesadas=idx,
+                    total_paginas=total_paginas,
+                    resultado_id=None,
+                    error=f'Error en la traducción de la página {idx + 1}: {error_msg}'
+                )
                 return
                 
-            tareas_traduccion[job_id]['paginas_procesadas'] = idx + 1
+            actualizar_tarea_traduccion(
+                job_id,
+                estado='procesando',
+                paginas_procesadas=idx + 1,
+                total_paginas=total_paginas
+            )
 
         # Unir todas las páginas traducidas
         texto_completo_traducido = '\n'.join(paginas_traducidas)
@@ -710,7 +803,7 @@ def ejecutar_traduccion(original_id, idioma_destino, job_id, usuario=None):
             'autor': doc['autor'],
             'tema': tema_traducido,
             'texto': texto_completo_traducido,
-            'fecha_creacion': datetime.datetime.utcnow()
+            'fecha_creacion': datetime.now(timezone.utc)
         }
         
         if 'usuario' in doc:
@@ -722,22 +815,24 @@ def ejecutar_traduccion(original_id, idioma_destino, job_id, usuario=None):
         # Limpiar caché de búsqueda al agregar nuevo documento
         limpiar_cache()
         
-        tareas_traduccion[job_id] = {
-            'estado': 'completado',
-            'paginas_procesadas': total_paginas,
-            'total_paginas': total_paginas,
-            'resultado_id': nuevo_id,
-            'error': None
-        }
+        actualizar_tarea_traduccion(
+            job_id,
+            estado='completado',
+            paginas_procesadas=total_paginas,
+            total_paginas=total_paginas,
+            resultado_id=nuevo_id,
+            error=None
+        )
 
     except Exception as e:
-        tareas_traduccion[job_id] = {
-            'estado': 'error',
-            'paginas_procesadas': 0,
-            'total_paginas': 0,
-            'resultado_id': None,
-            'error': f'Error general en traducción: {str(e)}'
-        }
+        actualizar_tarea_traduccion(
+            job_id,
+            estado='error',
+            paginas_procesadas=0,
+            total_paginas=0,
+            resultado_id=None,
+            error=f'Error general en traducción: {str(e)}'
+        )
 
 @app.route('/api/traducir/<id>', methods=['POST'])
 def traducir_documento(id):
@@ -758,13 +853,14 @@ def traducir_documento(id):
             
         job_id = str(uuid.uuid4())
         
-        tareas_traduccion[job_id] = {
-            'estado': 'procesando',
-            'paginas_procesadas': 0,
-            'total_paginas': 0,
-            'resultado_id': None,
-            'error': None
-        }
+        actualizar_tarea_traduccion(
+            job_id,
+            estado='procesando',
+            paginas_procesadas=0,
+            total_paginas=0,
+            resultado_id=None,
+            error=None
+        )
         
         hilo = threading.Thread(
             target=ejecutar_traduccion,
@@ -783,7 +879,7 @@ def traducir_documento(id):
 @app.route('/api/traducir/estado/<job_id>', methods=['GET'])
 def estado_traduccion(job_id):
     """API para consultar el estado de una traducción."""
-    tarea = tareas_traduccion.get(job_id)
+    tarea = obtener_tarea_traduccion(job_id)
     if not tarea:
         return jsonify({'error': 'Tarea de traducción no encontrada'}), 404
         

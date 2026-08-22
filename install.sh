@@ -47,19 +47,42 @@ RestartSec=3
 WantedBy=default.target
 EOL
 
+# Crear archivo de servicio RAG
+RAG_SERVICE_FILE="$HOME/.config/systemd/user/teccam_rag.service"
+cat > "$RAG_SERVICE_FILE" << EOL
+[Unit]
+Description=Teccam PDF RAG Service (FastAPI)
+After=network.target
+
+[Service]
+Type=simple
+Environment="PATH=$INSTALL_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin"
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/venv/bin/python rag_api.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target
+EOL
+
 # Recargar servicios de systemd del usuario
 systemctl --user daemon-reload
 
-# Habilitar el servicio para que se inicie con el sistema
+# Habilitar los servicios para que se inicien con el sistema
 systemctl --user enable teccam_pdf.service
+systemctl --user enable teccam_rag.service
 
-# Iniciar el servicio
-echo "Iniciando el servicio..."
+# Iniciar los servicios
+echo "Iniciando los servicios..."
 systemctl --user start teccam_pdf.service
+systemctl --user start teccam_rag.service
 
-# Verificar el estado del servicio
-echo "Verificando el estado del servicio..."
+# Verificar el estado de los servicios
+echo "Verificando el estado de los servicios..."
 systemctl --user status teccam_pdf.service
+systemctl --user status teccam_rag.service
+
 
 # Mostrar instrucciones finales
 echo "

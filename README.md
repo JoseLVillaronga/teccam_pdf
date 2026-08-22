@@ -9,6 +9,7 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - **Estado**: Producción
 
 ## Novedades recientes (Agosto 2026)
+- **API RAG desacoplada en FastAPI (Puerto 5022)**: Se implementó un microservicio independiente en FastAPI para la ingesta y sincronización de documentos con sistemas RAG (*Retrieval-Augmented Generation*) de IA local. Expone una interfaz Swagger OpenAPI en `/docs` y endpoints optimizados para consultar el índice de libros accesibles por el usuario `rag` (documentos públicos o compartidos), filtrar por temas/dominios, realizar sincronizaciones incrementales por fecha (`desde`) y descargar contenido en Markdown. Incluye autenticación opcional vía `RAG_API_KEY`.
 - **Motor de extracción con Docling remoto**: Se agregó un nuevo motor de extracción de documentos basado en `docling-serve`, que permite convertir PDF (y páginas web) a Markdown con OCR y reconstrucción de estructura de página, siendo mucho más preciso que la extracción simple con PyMuPDF, especialmente en documentos escaneados o con tablas complejas.
   - *Motivo*: Mejorar la calidad de extracción en documentos escaneados, tablas complejas y OCR.
   - *Configuración*: `DOCLING_IP` y `DOCLING_PORT` en `.env` (por defecto `192.168.1.47:5020`).
@@ -85,7 +86,14 @@ OPENAI_BASE_URL=https://api.deepseek.com/v1
 # Servidor Docling (motor de extracción avanzado)
 DOCLING_IP=192.168.1.47
 DOCLING_PORT=5020
+
+# Servidor RAG (FastAPI en puerto desacoplado 5022)
+RAG_HTTP_HOST=0.0.0.0
+RAG_HTTP_PORT=5022
+RAG_USER=rag
+RAG_API_KEY=tu_clave_api_rag_aqui
 ```
+
 
 Descripción de las variables:
 - `MONGO_USER`: Usuario de MongoDB
@@ -99,6 +107,11 @@ Descripción de las variables:
 - `OPENAI_BASE_URL`: URL base de la API compatible con OpenAI para el modelo DeepSeek
 - `DOCLING_IP`: IP del servidor Docling (por defecto `192.168.1.47`)
 - `DOCLING_PORT`: Puerto del servidor Docling (por defecto `5020`)
+- `RAG_HTTP_HOST`: Host de escucha para la API RAG (por defecto `0.0.0.0`)
+- `RAG_HTTP_PORT`: Puerto de escucha para la API RAG (por defecto `5022`)
+- `RAG_USER`: Nombre del usuario asignado para la lectura de documentos RAG (por defecto `rag`)
+- `RAG_API_KEY`: Clave secreta opcional para proteger las consultas de la API RAG
+
 
 ## Sistema de Permisos
 
@@ -217,7 +230,8 @@ http://localhost:5018/?url=https://ejemplo.com/documento.pdf&usuario=nombre_usua
 ## Estructura del Proyecto
 ```
 teccam_pdf/
-├── app.py                 # Aplicación principal Flask
+├── app.py                 # Aplicación principal Flask (Puerto 5018)
+├── rag_api.py             # Servicio RAG desacoplado en FastAPI (Puerto 5022)
 ├── extractor_html.py      # Extractor de páginas web
 ├── extractor_pdf.py       # Extractor de PDFs
 ├── extractor_docling.py   # Extractor de documentos con Docling remoto
@@ -230,25 +244,85 @@ teccam_pdf/
     └── leer.html         # Página de lectura
 ```
 
+
 ## Administración del Servicio
 
 ### Comandos Systemd
 ```bash
-# Ver estado
+# Ver estado del servicio web principal
 systemctl --user status teccam_pdf.service
 
-# Iniciar servicio
+# Ver estado del servicio RAG
+systemctl --user status teccam_rag.service
+
+# Iniciar servicios
 systemctl --user start teccam_pdf.service
+systemctl --user start teccam_rag.service
 
-# Detener servicio
+# Detener servicios
 systemctl --user stop teccam_pdf.service
+systemctl --user stop teccam_rag.service
 
-# Reiniciar servicio
+# Reiniciar servicios
 systemctl --user restart teccam_pdf.service
+systemctl --user restart teccam_rag.service
 
-# Ver logs
+# Ver logs en tiempo real
 journalctl --user -u teccam_pdf.service -f
+journalctl --user -u teccam_rag.service -f
 ```
+
+## API RAG para Sistemas de IA Local (Puerto 5022)
+
+La aplicación incluye un microservicio totalmente independiente construido en **FastAPI** que corre por defecto en el puerto `5022`. Este servicio expone automáticamente la documentación Swagger de OpenAPI en `http://localhost:5022/docs`.
+
+### Mecanismo de Visibilidad RAG
+El usuario configurado en `RAG_USER` (por defecto `rag`) solo tiene acceso a:
+1. Documentos **Públicos** (donde no hay propietario asignado).
+2. Documentos **Compartidos** explícitamente con el usuario `rag`.
+
+### Ejemplos de uso con `curl`
+
+Define tu clave API en la sesión (o utiliza la configurada en `.env`):
+```bash
+API_KEY="tu_clave_api_rag_aqui"
+```
+
+#### 1. Verificar Estado del Servicio (Health Check)
+```bash
+curl -s http://localhost:5022/ | jq .
+```
+
+#### 2. Obtener Índice de Documentos (Metadatos RAG)
+```bash
+curl -s -H "X-API-Key: $API_KEY" \
+  "http://localhost:5022/api/v1/rag/documentos?limite=10" | jq .
+```
+
+#### 3. Filtrar Documentos por Tema / Dominio
+```bash
+curl -s -H "X-API-Key: $API_KEY" \
+  "http://localhost:5022/api/v1/rag/documentos?tema=Estrategia" | jq .
+```
+
+#### 4. Sincronización Incremental (Fecha `desde` en UTC)
+```bash
+curl -s -H "X-API-Key: $API_KEY" \
+  "http://localhost:5022/api/v1/rag/documentos?desde=2026-08-01T00:00:00Z" | jq .
+```
+
+#### 5. Consultar Temas y Conteo de Documentos
+```bash
+curl -s -H "X-API-Key: $API_KEY" \
+  "http://localhost:5022/api/v1/rag/temas" | jq .
+```
+
+#### 6. Obtener Contenido Completo en Markdown por ID
+```bash
+curl -s -H "X-API-Key: $API_KEY" \
+  "http://localhost:5022/api/v1/rag/documentos/ID_DEL_DOCUMENTO" | jq .
+```
+
 
 ## Componentes y Dependencias
 

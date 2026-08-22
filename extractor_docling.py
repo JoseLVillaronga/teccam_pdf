@@ -37,6 +37,7 @@ import os
 import re
 import time
 import html as html_mod
+from urllib.parse import urlparse
 
 import requests
 
@@ -342,16 +343,154 @@ def _construir_opciones_base(to_formats='md'):
     }
 
 
-def convertir_pdf_docling(stream_bytes=None, archivo_path=None, url=None):
+def extraer_imagenes_pdf_pymupdf(stream_bytes, doc_id=None, imagenes_dir=None, url_base_imagenes=None, min_width=100, min_height=100):
+    """
+    Extrae las imágenes de un PDF usando PyMuPDF y las guarda en el directorio
+    local ``imagenes_dir``, devolviendo una lista con las referencias Markdown
+    en el orden en que aparecen en el documento.
+
+    Esta función se usa para complementar la extracción de Docling: Docling
+    coloca ``<!-- image -->`` como placeholder en el Markdown, pero no guarda
+    las imágenes. Con este helper extraemos las imágenes reales del PDF y las
+    asociamos a los placeholders de Docling.
+
+    :param stream_bytes: Contenido del PDF en bytes
+    :param doc_id: ID del documento (para la ruta de imágenes)
+    :param imagenes_dir: Directorio local donde guardar las imágenes
+    :param url_base_imagenes: URL base para referenciar las imágenes en Markdown
+    :param min_width: Ancho mínimo en px para considerar una imagen relevante
+    :param min_height: Alto mínimo en px para considerar una imagen relevante
+    :return: Lista de cadenas Markdown ``![Figura X](url)`` en orden de aparición
+    """
+    import fitz  # PyMuPDF (import local para no acoplar el módulo)
+
+    if not stream_bytes:
+        return []
+
+    if imagenes_dir:
+        os.makedirs(imagenes_dir, exist_ok=True)
+
+    referencias_markdown = []
+    try:
+        doc = fitz.open(stream=stream_bytes, filetype="pdf")
+        xrefs_procesados = set()
+        contador_img = 0
+
+        for num_pagina in range(len(doc)):
+            pagina = doc[num_pagina]
+            try:
+                image_list = pagina.get_images(full=True)
+                for img_info in image_list:
+                    xref = img_info[0]
+                    if xref in xrefs_procesados:
+                        continue
+
+                    base_image = doc.extract_image(xref)
+                    if not base_image:
+                        continue
+
+                    w = base_image.get("width", 0)
+                    h = base_image.get("height", 0)
+
+                    # Filtrar imágenes diminutas (iconos, separadores, logos pequeños)
+                    if w < min_width or h < min_height:
+                        continue
+
+                    image_bytes = base_image.get("image")
+                    image_ext = base_image.get("ext", "png")
+
+                    if not image_bytes:
+                        continue
+
+                    contador_img += 1
+                    img_filename = f"pag_{num_pagina + 1}_img_{contador_img}.{image_ext}"
+                    if imagenes_dir:
+                        img_filepath = os.path.join(imagenes_dir, img_filename)
+                        with open(img_filepath, "wb") as f:
+                            f.write(image_bytes)
+
+                    xrefs_procesados.add(xref)
+
+                    if url_base_imagenes:
+                        img_url = f"{url_base_imagenes.rstrip('/')}/{img_filename}"
+                        referencias_markdown.append(f"![Figura {contador_img} (Pág. {num_pagina + 1})]({img_url})")
+            except Exception as img_err:
+                print(f"Advertencia al extraer imágenes de página {num_pagina + 1}: {img_err}")
+
+        doc.close()
+    except Exception as e:
+        print(f"Error al extraer imágenes con PyMuPDF: {e}")
+
+    return referencias_markdown
+
+
+def integrar_imagenes_en_markdown(texto_markdown, referencias_imagenes):
+    """
+    Reemplaza los placeholders ``<!-- image -->`` que Docling inserta en el
+    Markdown por las referencias reales a las imágenes extraídas localmente.
+
+    Si hay más imágenes referencias que placeholders, las imágenes adicionales
+    se agregan al final del Markdown. Si hay menos imágenes que placeholders,
+    los placeholders restantes se eliminan.
+
+    :param texto_markdown: Markdown de Docling con ``<!-- image -->``
+    :param referencias_imagenes: Lista de cadenas Markdown de imágenes
+    :return: Markdown con las imágenes reemplazadas
+    """
+    if not texto_markdown:
+        return texto_markdown
+
+    import re as _re
+
+    # Contar placeholders existentes
+    placeholders = _re.findall(r'<!--\s*image\s*-->', texto_markdown, flags=_re.IGNORECASE)
+    if not placeholders:
+        # No hay placeholders: si hay imágenes, agregarlas al final
+        if referencias_imagenes:
+            imagenes_extra = '\n\n'.join(referencias_imagenes)
+            return f"{texto_markdown}\n\n{imagenes_extra}"
+        return texto_markdown
+
+    # Reemplazar cada placeholder por la siguiente imagen disponible
+    idx_imagen = 0
+    def reemplazar(match):
+        nonlocal idx_imagen
+        if idx_imagen < len(referencias_imagenes):
+            ref = referencias_imagenes[idx_imagen]
+            idx_imagen += 1
+            return f"\n\n{ref}\n\n"
+        else:
+            # No hay más imágenes: eliminar el placeholder
+            return ""
+
+    texto_con_imagenes = _re.sub(r'<!--\s*image\s*-->', reemplazar, texto_markdown, flags=_re.IGNORECASE)
+
+    # Si quedaron imágenes sin usar, agregarlas al final
+    if idx_imagen < len(referencias_imagenes):
+        imagenes_restantes = referencias_imagenes[idx_imagen:]
+        imagenes_extra = '\n\n'.join(imagenes_restantes)
+        texto_con_imagenes = f"{texto_con_imagenes}\n\n{imagenes_extra}"
+
+    return texto_con_imagenes
+
+
+def convertir_pdf_docling(stream_bytes=None, archivo_path=None, url=None, doc_id=None, imagenes_dir=None, url_base_imagenes=None):
     """
     Convierte un PDF al servidor Docling remoto y devuelve el texto en Markdown.
 
     El servidor Docling procesa el documento completo con OCR y reconstrucción
     de estructura, siendo mucho más preciso que la extracción simple de PyMuPDF.
 
+    Si se proporcionan ``imagenes_dir`` y ``url_base_imagenes``, se extraen las
+    imágenes del PDF con PyMuPDF y se reemplazan los placeholders ``<!-- image -->``
+    de Docling por referencias reales a las imágenes guardadas localmente.
+
     :param stream_bytes: Contenido del PDF en bytes (para archivo subido)
     :param archivo_path: Ruta del archivo en disco (alternativa a stream_bytes)
     :param url: URL del documento PDF (para PDFs desde URL)
+    :param doc_id: ID del documento (para asociar imágenes al documento)
+    :param imagenes_dir: Directorio local donde guardar las imágenes extraídas
+    :param url_base_imagenes: URL base para referenciar las imágenes en Markdown
     :return: Diccionario con 'url' o 'archivo' y el texto extraído en Markdown
     """
     docling_ip = os.getenv('DOCLING_IP', '192.168.1.47')
@@ -360,26 +499,59 @@ def convertir_pdf_docling(stream_bytes=None, archivo_path=None, url=None):
 
     opciones = _construir_opciones_base('md')
 
+    # Bytes del PDF (para extracción de imágenes complementaria)
+    pdf_bytes = None
+    nombre_pdf = None
+    es_url = False
+
     # Caso 1: El documento viene por URL
     if url and not stream_bytes and not archivo_path:
+        es_url = True
         texto = _convertir_url_docling(base_url, url, opciones)
-        return {"url": url, "texto": texto}
+        # Intentar descargar el PDF desde la URL para poder extraer imágenes
+        # complementarias con PyMuPDF y reemplazar los placeholders de Docling
+        try:
+            respuesta = requests.get(url, timeout=30)
+            respuesta.raise_for_status()
+            pdf_bytes = respuesta.content
+            nombre_pdf = os.path.basename(urlparse(url).path) or 'documento.pdf'
+        except Exception as e:
+            print(f"No se pudo descargar el PDF desde URL para extraer imágenes: {e}")
+            pdf_bytes = None
+            nombre_pdf = None
 
     # Caso 2: El documento viene como bytes subidos por formulario
-    if stream_bytes is not None:
-        texto = _convertir_archivo_docling(base_url, stream_bytes, 'documento.pdf', opciones)
-        return {"archivo": "documento.pdf", "texto": texto}
+    elif stream_bytes is not None:
+        pdf_bytes = stream_bytes
+        nombre_pdf = 'documento.pdf'
+        texto = _convertir_archivo_docling(base_url, stream_bytes, nombre_pdf, opciones)
 
     # Caso 3: El documento viene como ruta en disco
-    if archivo_path and os.path.exists(archivo_path):
-        nombre = os.path.basename(archivo_path)
+    elif archivo_path and os.path.exists(archivo_path):
+        nombre_pdf = os.path.basename(archivo_path)
         with open(archivo_path, 'rb') as f:
-            contenido = f.read()
-        texto = _convertir_archivo_docling(base_url, contenido, nombre, opciones)
-        return {"archivo": nombre, "texto": texto}
+            pdf_bytes = f.read()
+        texto = _convertir_archivo_docling(base_url, pdf_bytes, nombre_pdf, opciones)
 
-    print("Error: No se proporcionó un PDF válido para extraer con Docling")
-    return {"url": "", "texto": ""}
+    else:
+        print("Error: No se proporcionó un PDF válido para extraer con Docling")
+        return {"url": "", "texto": ""}
+
+    # Complementar con imágenes extraídas por PyMuPDF
+    if pdf_bytes and imagenes_dir and url_base_imagenes:
+        referencias_imagenes = extraer_imagenes_pdf_pymupdf(
+            pdf_bytes,
+            doc_id=doc_id,
+            imagenes_dir=imagenes_dir,
+            url_base_imagenes=url_base_imagenes
+        )
+        if referencias_imagenes:
+            texto = integrar_imagenes_en_markdown(texto, referencias_imagenes)
+
+    if es_url:
+        return {"url": url, "texto": texto}
+    else:
+        return {"archivo": nombre_pdf, "texto": texto}
 
 
 def _convertir_archivo_docling(base_url, contenido_bytes, nombre_archivo, opciones):
@@ -627,7 +799,7 @@ def extraer_html_docling_remoto(url):
     return {"url": url, "texto": texto}
 
 
-def extraer_docling_unificado(url=None, stream_bytes=None, archivo_path=None):
+def extraer_docling_unificado(url=None, stream_bytes=None, archivo_path=None, doc_id=None, imagenes_dir=None, url_base_imagenes=None):
     """
     Función unificada para extraer texto de PDF o HTML usando Docling remoto.
 
@@ -637,9 +809,16 @@ def extraer_docling_unificado(url=None, stream_bytes=None, archivo_path=None):
       se trata como PDF.
     - Si ``url`` es una página web, se envía como URL.
 
+    Si se proporcionan ``imagenes_dir`` y ``url_base_imagenes``, se extraen las
+    imágenes del PDF con PyMuPDF y se reemplazan los placeholders de Docling
+    por referencias reales a imágenes guardadas localmente.
+
     :param url: URL del documento (PDF o página web)
     :param stream_bytes: Contenido del PDF en bytes
     :param archivo_path: Ruta del archivo en disco
+    :param doc_id: ID del documento (para asociar imágenes)
+    :param imagenes_dir: Directorio local donde guardar las imágenes extraídas
+    :param url_base_imagenes: URL base para referenciar las imágenes en Markdown
     :return: Texto extraído en formato Markdown
     """
     # Si hay un archivo o bytes, es un PDF (u otro documento a convertir)
@@ -647,7 +826,10 @@ def extraer_docling_unificado(url=None, stream_bytes=None, archivo_path=None):
         return convertir_pdf_docling(
             stream_bytes=stream_bytes,
             archivo_path=archivo_path,
-            url=None
+            url=None,
+            doc_id=doc_id,
+            imagenes_dir=imagenes_dir,
+            url_base_imagenes=url_base_imagenes
         )
 
     # Si llegó URL, puede ser PDF o página web
@@ -657,7 +839,12 @@ def extraer_docling_unificado(url=None, stream_bytes=None, archivo_path=None):
             'pdf' in url_lower and 'document' not in url_lower
         )
         if es_pdf_url:
-            return convertir_pdf_docling(url=url)
+            return convertir_pdf_docling(
+                url=url,
+                doc_id=doc_id,
+                imagenes_dir=imagenes_dir,
+                url_base_imagenes=url_base_imagenes
+            )
         else:
             return extraer_html_docling_remoto(url)
 

@@ -9,8 +9,14 @@ Teccam PDF es una aplicación web que permite extraer y almacenar texto de docum
 - **Estado**: Producción
 
 ## Novedades recientes (Agosto 2026)
+- **Motor de extracción con Docling remoto**: Se agregó un nuevo motor de extracción de documentos basado en `docling-serve`, que permite convertir PDF (y páginas web) a Markdown con OCR y reconstrucción de estructura de página, siendo mucho más preciso que la extracción simple con PyMuPDF, especialmente en documentos escaneados o con tablas complejas.
+  - *Motivo*: Mejorar la calidad de extracción en documentos escaneados, tablas complejas y OCR.
+  - *Configuración*: `DOCLING_IP` y `DOCLING_PORT` en `.env` (por defecto `192.168.1.47:5020`).
+  - *Uso*: En `/procesar`, seleccionar `motor=docling` para activar este motor. Soporta conversión síncrona y asíncrona (con polling de estado para archivos grandes).
 - **Extracción y visualización de imágenes**: Se agregó la extracción automática de imágenes incrustadas en documentos PDF (vía PyMuPDF) y la descarga de imágenes en páginas web. Los archivos se guardan organizados en `static/documentos/<doc_id>/` y se referencian en el texto Markdown con estilos adaptados al modo oscuro. Al eliminar un documento, se limpia automáticamente su carpeta de imágenes del disco.
   - *Motivo*: Permitir la visualización completa de documentos técnicos, manuales y artículos que dependen de figuras, diagramas y capturas para su comprensión.
+- **Integración de imágenes en Docling**: Cuando se usa el motor Docling, las imágenes del PDF se extraen complementariamente con PyMuPDF y se reemplazan los placeholders `<!-- image -->` (que Docling inserta en el Markdown) por referencias reales a las imágenes guardadas localmente. Si hay imágenes extra sin placeholder, se agregan al final del Markdown.
+  - *Motivo*: Docling coloca placeholders de imágenes pero no guarda las imágenes reales; este paso complementario completa la visualización.
 - **Recomposición de palabras partidas con guión (`-`) en PDFs**: Se corrigió el algoritmo de limpieza de texto para detectar cuando una palabra se corta al final de la línea física del PDF, extrayendo la sílaba inicial de la línea siguiente y fusionándola a la palabra original (ej: `investiga-` + `ción` $\rightarrow$ `investigación`).
   - *Motivo*: Evitar que las palabras quedaran truncadas en dos líneas separadas sin el guión visual en el lector web.
 - **Persistencia de tareas de traducción en MongoDB con TTL**: El estado de las traducciones asíncronas con DeepSeek se migró desde un diccionario en memoria RAM a la colección `tareas_traduccion` en MongoDB, con un índice de expiración automática (TTL) de 24 horas (`expireAfterSeconds=86400`).
@@ -75,6 +81,10 @@ EDITORES=editor1,editor2,editor3
 OPENAI_API_KEY=tu_api_key_aqui
 OPENAI_MODEL=deepseek-v4-flash
 OPENAI_BASE_URL=https://api.deepseek.com/v1
+
+# Servidor Docling (motor de extracción avanzado)
+DOCLING_IP=192.168.1.47
+DOCLING_PORT=5020
 ```
 
 Descripción de las variables:
@@ -87,6 +97,8 @@ Descripción de las variables:
 - `OPENAI_API_KEY`: API Key para acceder a la API de DeepSeek
 - `OPENAI_MODEL`: Identificador del modelo (por ejemplo, `deepseek-v4-flash`)
 - `OPENAI_BASE_URL`: URL base de la API compatible con OpenAI para el modelo DeepSeek
+- `DOCLING_IP`: IP del servidor Docling (por defecto `192.168.1.47`)
+- `DOCLING_PORT`: Puerto del servidor Docling (por defecto `5020`)
 
 ## Sistema de Permisos
 
@@ -208,6 +220,7 @@ teccam_pdf/
 ├── app.py                 # Aplicación principal Flask
 ├── extractor_html.py      # Extractor de páginas web
 ├── extractor_pdf.py       # Extractor de PDFs
+├── extractor_docling.py   # Extractor de documentos con Docling remoto
 ├── requirements.txt       # Dependencias
 ├── install.sh            # Script de instalación
 ├── .env                  # Configuración local

@@ -32,7 +32,8 @@ EDITORES = os.getenv('EDITORES', '').split(',')
 
 # Configuración
 RESULTADOS_POR_PAGINA = int(os.getenv('RESULTADOS_POR_PAGINA', 20))
-LINEAS_POR_PAGINA = int(os.getenv('LINEAS_POR_PAGINA', 50))
+LINEAS_POR_PAGINA = int(os.getenv('LINEAS_POR_PAGINA', 50))  # Compatibilidad: usado como fallback
+CARACTERES_POR_PAGINA = int(os.getenv('CARACTERES_POR_PAGINA', 5000))  # Paginación consistente entre motores
 CACHE_TTL = int(os.getenv('CACHE_TTL', 300))  # 5 minutos por defecto
 
 def es_editor(usuario):
@@ -144,29 +145,54 @@ def es_pdf(url):
     """Determina si una URL corresponde a un archivo PDF."""
     return urlparse(url).path.lower().endswith('.pdf')
 
-def dividir_en_paginas(texto_markdown, lineas_por_pagina=LINEAS_POR_PAGINA):
+def dividir_en_paginas(texto_markdown, caracteres_por_pagina=CARACTERES_POR_PAGINA):
     """
-    Divide el texto markdown en páginas de aproximadamente N líneas cada una.
+    Divide el texto markdown en páginas de aproximadamente N caracteres cada una.
     Respeta los saltos de párrafo para no cortar en medio de un párrafo.
+    Si un párrafo es muy largo, se corta en trozos.
+
+    Se basa en caracteres (no en líneas) para que la paginación sea consistente
+    entre los distintos motores de extracción (PyMuPDF genera muchas líneas con
+    separadores e imágenes, mientras que Docling produce Markdown más compacto).
     """
-    lineas = texto_markdown.split('\n')
+    if not texto_markdown:
+        return ['']
+    
+    # Separar por párrafos (dos o más saltos de línea)
+    parrafos = [p.strip() for p in re.split(r'\n\s*\n', texto_markdown) if p.strip()]
     paginas = []
     pagina_actual = []
-    contador_lineas = 0
+    caracteres_actuales = 0
     
-    for linea in lineas:
-        pagina_actual.append(linea)
-        contador_lineas += 1
+    for parrafo in parrafos:
+        longitud_parrafo = len(parrafo) + 2  # +2 por los saltos de línea
         
-        # Si llegamos al límite y la línea está vacía (fin de párrafo), cerramos página
-        if contador_lineas >= lineas_por_pagina and linea.strip() == '':
-            paginas.append('\n'.join(pagina_actual))
+        # Párrafo excesivamente largo: cortarlo en trozos
+        if longitud_parrafo > caracteres_por_pagina:
+            # Cerrar página actual si hay contenido
+            if pagina_actual:
+                paginas.append('\n\n'.join(pagina_actual))
+                pagina_actual = []
+                caracteres_actuales = 0
+            
+            # Cortar el párrafo en trozos
+            trozos = [parrafo[i:i+caracteres_por_pagina] for i in range(0, len(parrafo), caracteres_por_pagina)]
+            for trozo in trozos:
+                paginas.append(trozo)
+            continue
+        
+        # Si agregar este párrafo supera el límite y ya hay contenido, cerramos página
+        if caracteres_actuales + longitud_parrafo > caracteres_por_pagina and pagina_actual:
+            paginas.append('\n\n'.join(pagina_actual))
             pagina_actual = []
-            contador_lineas = 0
+            caracteres_actuales = 0
+        
+        pagina_actual.append(parrafo)
+        caracteres_actuales += longitud_parrafo
     
     # Agregar la última página si quedó contenido
     if pagina_actual:
-        paginas.append('\n'.join(pagina_actual))
+        paginas.append('\n\n'.join(pagina_actual))
     
     # Si no hay páginas (texto vacío), devolver una página vacía
     if not paginas:
@@ -661,10 +687,15 @@ def procesar():
 
             if motor == 'docling':
                 # Usar Docling remoto para obtener mejor calidad (OCR + estructura)
+                # Se pasan doc_id/imagenes_dir para extraer imágenes con PyMuPDF
+                # y reemplazar los placeholders <!-- image --> de Docling
                 resultado = convertir_pdf_docling(
                     stream_bytes=archivo_bytes,
                     archivo_path=None,
-                    url=None
+                    url=None,
+                    doc_id=doc_id,
+                    imagenes_dir=doc_dir,
+                    url_base_imagenes=url_base_imagenes
                 )
             else:
                 # Motor por defecto: PyMuPDF
@@ -680,7 +711,14 @@ def procesar():
             # Extraer el texto según el tipo de URL y el motor seleccionado
             if motor == 'docling':
                 # Docling remoto gestiona PDF y HTML de forma unificada
-                resultado = extraer_docling_unificado(url=url)
+                # Se pasan doc_id/imagenes_dir para extraer imágenes con PyMuPDF
+                # y reemplazar los placeholders <!-- image --> de Docling
+                resultado = extraer_docling_unificado(
+                    url=url,
+                    doc_id=doc_id,
+                    imagenes_dir=doc_dir,
+                    url_base_imagenes=url_base_imagenes
+                )
             elif es_pdf(url):
                 resultado = extraer_texto_pdf_markdown(
                     url,

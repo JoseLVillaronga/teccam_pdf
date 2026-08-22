@@ -8,15 +8,19 @@ from pymongo import MongoClient
 from pymongo.errors import PyMongoError
 from extractor_html import extraer_texto_html_markdown
 from extractor_pdf import extraer_texto_pdf_markdown, extraer_texto_pdf_archivo
+from extractor_docling import extraer_docling_unificado, convertir_pdf_docling
 from urllib.parse import urlparse
 from bson import ObjectId
-import markdown2
+from markdown_it import MarkdownIt
 import hashlib
+import html as html_mod
 import json
 import math
 import threading
 import uuid
+import re
 import requests
+import sys
 import time
 from flask_caching import Cache
 
@@ -41,10 +45,12 @@ app = Flask(__name__)
 MONGO_URI = f"mongodb://{os.getenv('MONGO_USER')}:{os.getenv('MONGO_PASS')}@{os.getenv('MONGO_HOST')}"
 client = MongoClient(
     MONGO_URI,
-    serverSelectionTimeoutMS=5000,  # Timeout de 5 segundos para seleccionar servidor
-    connectTimeoutMS=5000,          # Timeout de conexión
-    socketTimeoutMS=30000,          # Timeout de socket para operaciones largas
-    maxPoolSize=10                  # Limitar conexiones en pool
+    serverSelectionTimeoutMS=10000, # Timeout de 10 segundos para seleccionar servidor
+    connectTimeoutMS=10000,         # Timeout de conexión
+    socketTimeoutMS=600000,          # Timeout de socket: 10 min para insertar documentos grandes (libros)
+    connect=False,                   # Conexión lazy para no bloquear al arrancar
+    maxPoolSize=20,                  # Limitar conexiones en pool
+    retryWrites=True                 # Reintentar escrituras por robustez
 )
 db = client.teccam_pdf
 collection = db.documentos
@@ -167,6 +173,90 @@ def dividir_en_paginas(texto_markdown, lineas_por_pagina=LINEAS_POR_PAGINA):
         paginas = ['']
     
     return paginas
+
+# Instancia global de markdown-it-py (más robusto que markdown2)
+# habilitamos 'break-on-newline' equivalente: markdown-it respeta \n como <br>
+# con 'breaks' en el preset de opciones
+_md = MarkdownIt(
+    'commonmark',
+    options_update={'breaks': True}  # \n -> <br>, equivalente a extras=['break-on-newline']
+).enable('table')  # Habilitar tablas (CommonMark no las soporta por defecto)
+
+def markdown_seguro(texto_markdown, extras=None):
+    """
+    Convierte texto Markdown a HTML de forma segura.
+
+    Usa ``markdown-it-py`` (basado en CommonMark), mucho más robusto que
+    ``markdown2`` y sin recursión infinita con textos con espaciado múltiple
+    excesivo (típico de PDFs escaneados con columnas) o con HTML malformado
+    que Docling puede generar.
+
+    Si aun así falla, se implementan fallbacks en cascada:
+
+    1. Intento normal con ``markdown-it-py``.
+    2. Si falla, colapsa espacios múltiples y reintenta.
+    3. Si sigue fallando, fragmenta el texto en trozos.
+    4. Último recurso: devolver el texto escapado envuelto en ``<pre>``.
+
+    :param texto_markdown: Texto Markdown a convertir
+    :param extras: Se mantiene por compatibilidad (markdown-it-py ya respeta
+                   los saltos de línea con ``breaks=True``)
+    :return: HTML resultante
+    """
+    if not texto_markdown:
+        return ""
+
+    # 1. Intento normal
+    try:
+        return _md.render(texto_markdown)
+
+    except Exception:
+        print("Error en markdown-it-py, aplicando fallback...")
+
+        # 2. Colapsar espacios múltiples y reintentar.
+        texto_colapsado = re.sub(r' {2,}', ' ', texto_markdown)
+        try:
+            return _md.render(texto_colapsado)
+        except Exception:
+            pass
+
+        # 3. Fragmentar el texto en trozos más pequeños y convertir cada uno
+        try:
+            fragmentos = []
+            lineas = texto_colapsado.split('\n')
+            bloque_actual = []
+            total_lineas = 0
+
+            for linea in lineas:
+                bloque_actual.append(linea)
+                total_lineas += 1
+                # Cada 30 líneas o al llegar a ~5000 caracteres, cerramos bloque
+                if total_lineas >= 30 or sum(len(l) + 1 for l in bloque_actual) >= 5000:
+                    fragmentos.append('\n'.join(bloque_actual))
+                    bloque_actual = []
+                    total_lineas = 0
+
+            if bloque_actual:
+                fragmentos.append('\n'.join(bloque_actual))
+
+            html_fragmentos = []
+            for fragmento in fragmentos:
+                try:
+                    html_fragmentos.append(_md.render(fragmento))
+                except Exception:
+                    # Escapar este fragmento problemático
+                    html_fragmentos.append(
+                        f"<pre>{html_mod.escape(fragmento, quote=False)}</pre>"
+                    )
+
+            return '\n'.join(html_fragmentos)
+
+        except Exception as e:
+            print(f"Error al fragmentar en markdown_seguro: {e}")
+
+        # 4. Último recurso: texto escapado envuelto en <pre>
+        print("Último recurso: devolviendo texto escapado en <pre>")
+        return f"<pre>{html_mod.escape(texto_markdown, quote=False)}</pre>"
 
 @app.route('/', methods=['GET'])
 def index():
@@ -397,8 +487,8 @@ def obtener_documento(id):
                 paginas_markdown = dividir_en_paginas(texto_markdown)
                 total_paginas = len(paginas_markdown)
                 
-                # Convertir solo la primera página a HTML
-                primera_pagina_html = markdown2.markdown(paginas_markdown[0], extras=['break-on-newline']) if paginas_markdown else ''
+                # Convertir solo la primera página a HTML (con protección contra RecursionError)
+                primera_pagina_html = markdown_seguro(paginas_markdown[0]) if paginas_markdown else ''
                 
                 can_edit = is_editor or (doc_usuario is not None and doc_usuario == usuario)
                 can_delete = is_editor or (doc_usuario is not None and doc_usuario == usuario)
@@ -466,8 +556,9 @@ def obtener_pagina_documento(id, numero_pagina):
             return jsonify({'error': 'Número de página inválido'}), 400
         
         # Convertir solo la página solicitada a HTML
-        # Usamos extras=['break-on-newline'] para preservar saltos de línea simples (\n -> <br>)
-        pagina_html = markdown2.markdown(paginas_markdown[numero_pagina - 1], extras=['break-on-newline'])
+        # Usamos markdown_seguro para preservar saltos de línea simples (\n -> <br>)
+        # y protegernos contra RecursionError por HTML malformado de Docling
+        pagina_html = markdown_seguro(paginas_markdown[numero_pagina - 1])
         
         resultado = {
             'contenido_html': pagina_html,
@@ -557,25 +648,40 @@ def procesar():
         doc_dir = os.path.join(app.root_path, 'static', 'documentos', doc_id)
         url_base_imagenes = f"/static/documentos/{doc_id}"
 
+        # Motores de extracción: 'default' (PyMuPDF/html2text) o 'docling' (Docling remoto)
+        motor = request.form.get('motor', 'default')
+
         # Verificar si se subió un archivo o se ingresó una URL
         archivo = request.files.get('archivo_pdf')
         url = request.form.get('url', '')
 
         if archivo and archivo.filename and archivo.filename.lower().endswith('.pdf'):
-            # Procesar archivo PDF subido
             archivo_bytes = archivo.read()
             nombre_archivo = archivo.filename
-            resultado = extraer_texto_pdf_archivo(
-                archivo_bytes,
-                nombre_archivo,
-                doc_id=doc_id,
-                imagenes_dir=doc_dir,
-                url_base_imagenes=url_base_imagenes
-            )
+
+            if motor == 'docling':
+                # Usar Docling remoto para obtener mejor calidad (OCR + estructura)
+                resultado = convertir_pdf_docling(
+                    stream_bytes=archivo_bytes,
+                    archivo_path=None,
+                    url=None
+                )
+            else:
+                # Motor por defecto: PyMuPDF
+                resultado = extraer_texto_pdf_archivo(
+                    archivo_bytes,
+                    nombre_archivo,
+                    doc_id=doc_id,
+                    imagenes_dir=doc_dir,
+                    url_base_imagenes=url_base_imagenes
+                )
             url_origen = f"archivo_local:{nombre_archivo}"
         elif url:
-            # Extraer el texto según el tipo de URL
-            if es_pdf(url):
+            # Extraer el texto según el tipo de URL y el motor seleccionado
+            if motor == 'docling':
+                # Docling remoto gestiona PDF y HTML de forma unificada
+                resultado = extraer_docling_unificado(url=url)
+            elif es_pdf(url):
                 resultado = extraer_texto_pdf_markdown(
                     url,
                     doc_id=doc_id,
@@ -618,7 +724,7 @@ def procesar():
         if not es_publico and usuario:
             documento['usuario'] = usuario
 
-        # Guardar en MongoDB
+        # Guardar en MongoDB (con timeout amplio para documentos grandes)
         collection.insert_one(documento)
         
         # Limpiar caché de búsqueda al agregar nuevo documento

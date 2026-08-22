@@ -137,6 +137,15 @@
                         </div>
                     </div>
 
+                    <div class="mb-3">
+                        <label for="motor" class="form-label">Motor de extracción</label>
+                        <select class="form-select" id="motor" name="motor">
+                            <option value="default" selected>Básico (PyMuPDF/HTML)</option>
+                            <option value="docling">Docling (OCR + estructura)</option>
+                        </select>
+                        <div class="form-text">Docling ofrece mayor precisión en documentos escaneados y tablas complejas.</div>
+                    </div>
+
                     <div class="mb-3" id="urlGroup">
                         <label for="url" class="form-label">URL del documento</label>
                         <input type="url" class="form-control" id="url" name="url" 

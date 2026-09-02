@@ -740,6 +740,28 @@ def procesar():
                 'message': 'Debe proporcionar una URL o subir un archivo PDF'
             }), 400
 
+        # Validar que la extracción produjo texto (los extractores devuelven texto
+        # vacío ante fallos; evita guardar documentos vacíos como si fueran exitosos)
+        texto_extraido = (resultado.get('texto') or '').strip()
+        if not texto_extraido:
+            # Eliminar la carpeta de imágenes creada (evita archivos huérfanos en disco)
+            if os.path.exists(doc_dir):
+                try:
+                    shutil.rmtree(doc_dir)
+                except Exception:
+                    pass
+            motivo = (resultado.get('error') or '').strip()
+            if motivo:
+                mensaje_error = f"No se pudo extraer texto del documento: {motivo}"
+            else:
+                mensaje_error = (
+                    "No se obtuvo texto del documento. Verifique que la URL o el archivo "
+                    "sea válido y accesible, que el PDF no esté dañado o sea solo imágenes "
+                    "sin OCR (pruebe con el motor Docling) y que el servidor Docling esté "
+                    "activo si corresponde."
+                )
+            return jsonify({'status': 'error', 'message': mensaje_error}), 422
+
         # Si el directorio de imágenes se creó pero quedó vacío, lo limpiamos
         if os.path.exists(doc_dir) and not os.listdir(doc_dir):
             try:
@@ -754,7 +776,7 @@ def procesar():
             'titulo': titulo,
             'autor': autor,
             'tema': tema,
-            'texto': resultado['texto'],
+            'texto': texto_extraido,
             'fecha_creacion': datetime.now(timezone.utc)
         }
 

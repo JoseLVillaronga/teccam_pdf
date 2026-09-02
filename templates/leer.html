@@ -673,7 +673,11 @@
             document.getElementById('searchPagination').innerHTML = '';
 
             fetch(`/api/buscar?${params.toString()}`)
-                .then(response => response.json())
+                .then(async (response) => {
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(data.error || `Error HTTP ${response.status}`);
+                    return data;
+                })
                 .then(data => {
                     const documentos = data.documentos || [];
                     const total = data.total || 0;
@@ -773,7 +777,12 @@
                 .catch(error => {
                     console.error('Error:', error);
                     document.getElementById('searchLoading').classList.remove('show');
-                    document.getElementById('searchResults').innerHTML = '<p class="text-center text-danger">Error al cargar documentos.</p>';
+                    const searchResults = document.getElementById('searchResults');
+                    searchResults.innerHTML = '';
+                    const errP = document.createElement('p');
+                    errP.className = 'text-center text-danger';
+                    errP.textContent = 'Error al cargar documentos: ' + (error && error.message ? error.message : 'Error desconocido');
+                    searchResults.appendChild(errP);
                 });
         }
 
@@ -851,7 +860,8 @@
                 document.getElementById('markdownContent').innerHTML = '';
 
                 const response = await fetch(`/api/documento/${id}?usuario=${usuario}`);
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(data.error || `Error HTTP ${response.status} al cargar el documento`);
                 documentoActualData = data;
                 
                 document.getElementById('documentList').style.display = 'none';
@@ -902,7 +912,10 @@
             } catch (error) {
                 console.error('Error:', error);
                 document.getElementById('pageLoading').classList.remove('show');
-                document.getElementById('markdownContent').innerHTML = '<p class="text-center text-danger">Error al cargar el documento.</p>';
+                // Mostrar el error de forma visible y volver a la lista de documentos
+                document.getElementById('documentContent').style.display = 'none';
+                document.getElementById('documentList').style.display = 'block';
+                mostrarToast('Error al cargar el documento: ' + (error && error.message ? error.message : 'Error desconocido'));
             }
         }
 
@@ -912,6 +925,7 @@
             if (numeroPagina === paginaActual) return;
             
             cargandoPagina = true;
+            const paginaPrevia = paginaActual;
             paginaActual = numeroPagina;
             
             try {
@@ -920,7 +934,8 @@
                 document.getElementById('markdownContent').style.opacity = '0.3';
                 
                 const response = await fetch(`/api/documento/${documentoActualId}/pagina/${numeroPagina}?usuario=${usuario}`);
-                const data = await response.json();
+                const data = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(data.error || `Error HTTP ${response.status} al cargar la página`);
                 
                 document.getElementById('markdownContent').innerHTML = DOMPurify.sanitize(data.contenido_html);
                 totalPaginasDoc = data.total_paginas;
@@ -940,7 +955,11 @@
                 
             } catch (error) {
                 console.error('Error al cargar página:', error);
-                mostrarToast('Error al cargar la página');
+                // Si la carga falló, volver al número de página previo
+                paginaActual = paginaPrevia;
+                document.getElementById('pageInput').value = paginaPrevia;
+                actualizarBotonesNavegacion();
+                mostrarToast('Error al cargar la página: ' + (error && error.message ? error.message : 'Error desconocido'));
             } finally {
                 document.getElementById('pageLoading').classList.remove('show');
                 document.getElementById('markdownContent').style.opacity = '1';

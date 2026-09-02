@@ -110,7 +110,7 @@ Descripción de las variables:
 - `RAG_HTTP_HOST`: Host de escucha para la API RAG (por defecto `0.0.0.0`)
 - `RAG_HTTP_PORT`: Puerto de escucha para la API RAG (por defecto `5022`)
 - `RAG_USER`: Nombre del usuario asignado para la lectura de documentos RAG (por defecto `rag`)
-- `RAG_API_KEY`: Clave secreta opcional para proteger las consultas de la API RAG
+- `RAG_API_KEY`: Clave secreta opcional para proteger las consultas de la API RAG (se recomienda definirla siempre que el puerto 5022 sea accesible desde la red; sin clave, el servicio queda abierto a quien pueda alcanzarlo)
 
 
 ## Sistema de Permisos

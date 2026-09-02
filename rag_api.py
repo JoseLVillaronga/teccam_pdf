@@ -44,11 +44,14 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# Permitir CORS para consultas locales
+# Permitir CORS para consultas locales.
+# La autenticación viaja por cabecera (X-API-Key / Bearer), no por cookies, por lo que
+# allow_credentials=False es lo correcto: con allow_origins=["*"] + allow_credentials=True,
+# Starlette refleja cualquier Origin y la combinación es inválida según el estándar CORS.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -340,6 +343,13 @@ def listar_temas_rag():
 
 
 if __name__ == "__main__":
+    if not RAG_API_KEY and RAG_HTTP_HOST not in ("127.0.0.1", "localhost", "::1"):
+        print(
+            "ADVERTENCIA DE SEGURIDAD: RAG_API_KEY no está configurada y el servicio "
+            f"escucha en {RAG_HTTP_HOST}:{RAG_HTTP_PORT}. La API queda abierta a la red "
+            "sin autenticación. Defina RAG_API_KEY en .env o restrinja RAG_HTTP_HOST a "
+            "127.0.0.1 si solo la consume IA local del mismo equipo."
+        )
     print(f"Iniciando Teccam PDF RAG API en http://{RAG_HTTP_HOST}:{RAG_HTTP_PORT}")
     print(f"Documentación OpenAPI en http://localhost:{RAG_HTTP_PORT}/docs")
     uvicorn.run(app, host=RAG_HTTP_HOST, port=RAG_HTTP_PORT)

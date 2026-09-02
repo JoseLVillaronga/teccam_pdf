@@ -200,7 +200,9 @@ def extraer_texto_pdf_directo(stream_bytes, doc_id=None, imagenes_dir=None, url_
     
     except Exception as e:
         print(f"Error al extraer texto e imágenes del PDF: {e}")
-        return ""
+        # Re-lanzar para que el llamador (app.py) pueda informar la causa real
+        # en lugar de guardar un documento vacío en silencio.
+        raise
 
 
 def extraer_texto_pdf_markdown(url, doc_id=None, imagenes_dir=None, url_base_imagenes=None):
@@ -229,7 +231,7 @@ def extraer_texto_pdf_markdown(url, doc_id=None, imagenes_dir=None, url_base_ima
     
     except Exception as e:
         print(f"Error al procesar el PDF desde URL: {e}")
-        return {"url": url, "texto": ""}
+        return {"url": url, "texto": "", "error": str(e)}
 
 
 def extraer_texto_pdf_archivo(archivo_bytes, nombre_archivo, doc_id=None, imagenes_dir=None, url_base_imagenes=None):
@@ -255,7 +257,7 @@ def extraer_texto_pdf_archivo(archivo_bytes, nombre_archivo, doc_id=None, imagen
     
     except Exception as e:
         print(f"Error al procesar el archivo PDF '{nombre_archivo}': {e}")
-        return {"archivo": nombre_archivo, "texto": ""}
+        return {"archivo": nombre_archivo, "texto": "", "error": str(e)}
 
 
 if __name__ == "__main__":

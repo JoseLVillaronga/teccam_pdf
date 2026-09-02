@@ -103,7 +103,7 @@ def extraer_texto_html_markdown(url, doc_id=None, imagenes_dir=None, url_base_im
     
     except Exception as e:
         print(f"Error al procesar la página HTML: {e}")
-        return {"url": url, "texto": ""}
+        return {"url": url, "texto": "", "error": str(e)}
 
 if __name__ == "__main__":
     # Modo interactivo: se pide al usuario la URL de la página HTML a descargar

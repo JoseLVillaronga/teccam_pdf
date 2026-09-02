@@ -559,6 +559,21 @@
                         <label for="editTema" class="form-label">Tema</label>
                         <input type="text" id="editTema" class="form-control" placeholder="Tema del documento" required>
                     </div>
+                    <div class="mb-3">
+                        <label for="editVigencia" class="form-label">Vigencia</label>
+                        <select class="form-select" id="editVigencia">
+                            <option value="vigente">Vigente</option>
+                            <option value="derogado">Derogado</option>
+                            <option value="parcialmente-vigente">Parcialmente vigente</option>
+                            <option value="en-proyecto">En proyecto</option>
+                            <option value="NA (no aplica)">NA (no aplica)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editFechaPublicacion" class="form-label">Fecha de publicación</label>
+                        <input type="text" id="editFechaPublicacion" class="form-control" placeholder="Ej: 2020-03-15, 15/03/2020, marzo 2020">
+                        <div class="form-text text-muted" style="font-size: 0.85rem;">Se normaliza automáticamente a formato ISO (YYYY-MM-DD) al guardar.</div>
+                    </div>
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" id="editEsPublico" onchange="toggleCompartidosField()">
                         <label class="form-check-label" for="editEsPublico">Hacer documento público</label>
@@ -745,7 +760,7 @@
                                     } else if (typeof doc.usuarios_compartidos === 'string') {
                                         uStr = doc.usuarios_compartidos;
                                     }
-                                    abrirModalEdicion(doc._id, doc.titulo, doc.autor, doc.tema, isPublic, uStr);
+                                    abrirModalEdicion(doc._id, doc.titulo, doc.autor, doc.tema, isPublic, uStr, doc.vigencia, doc.fecha_publicacion);
                                 };
                                 actionsDiv.appendChild(editBtn);
                             }
@@ -1240,7 +1255,7 @@
             }
         }
 
-        function abrirModalEdicion(id, titulo, autor, tema, esPublico, usuariosCompartidos) {
+        function abrirModalEdicion(id, titulo, autor, tema, esPublico, usuariosCompartidos, vigencia, fechaPublicacion) {
             if (!editModal) {
                 editModal = new bootstrap.Modal(document.getElementById('editModal'));
             }
@@ -1248,6 +1263,8 @@
             document.getElementById('editTitulo').value = titulo || '';
             document.getElementById('editAutor').value = autor || '';
             document.getElementById('editTema').value = tema || '';
+            document.getElementById('editVigencia').value = vigencia || 'NA (no aplica)';
+            document.getElementById('editFechaPublicacion').value = fechaPublicacion || '';
             document.getElementById('editEsPublico').checked = !!esPublico;
             document.getElementById('editUsuariosCompartidos').value = usuariosCompartidos || '';
             
@@ -1263,7 +1280,9 @@
                 documentoActualData.autor,
                 documentoActualData.tema,
                 documentoActualData.es_publico,
-                documentoActualData.usuarios_compartidos
+                documentoActualData.usuarios_compartidos,
+                documentoActualData.vigencia,
+                documentoActualData.fecha_publicacion
             );
         }
 
@@ -1274,6 +1293,8 @@
             const tema = document.getElementById('editTema').value.trim();
             const esPublico = document.getElementById('editEsPublico').checked;
             const usuariosCompartidos = document.getElementById('editUsuariosCompartidos').value.trim();
+            const vigencia = document.getElementById('editVigencia').value;
+            const fechaPublicacion = document.getElementById('editFechaPublicacion').value.trim();
 
             if (!titulo || !autor || !tema) {
                 mostrarToast('Por favor, completa los campos requeridos (Título, Autor y Tema).');
@@ -1293,6 +1314,8 @@
                         tema: tema,
                         es_publico: esPublico,
                         usuarios_compartidos: usuariosCompartidos,
+                        vigencia: vigencia,
+                        fecha_publicacion: fechaPublicacion,
                         usuario: usuario || null
                     })
                 });

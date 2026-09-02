@@ -22,6 +22,7 @@ import re
 import requests
 import sys
 import time
+from metadata_doc import VIGENCIA_OPCIONES, VIGENCIA_DEFECTO, normalizar_fecha_publicacion
 from flask_caching import Cache
 
 # Cargar variables de entorno
@@ -356,7 +357,7 @@ def buscar_documentos():
             skip = (pagina - 1) * resultados_por_pagina
             documentos = list(collection.find(
                 query,
-                {'titulo': 1, 'autor': 1, 'tema': 1, 'usuario': 1, 'usuarios_compartidos': 1}
+                {'titulo': 1, 'autor': 1, 'tema': 1, 'usuario': 1, 'usuarios_compartidos': 1, 'vigencia': 1, 'fecha_publicacion': 1}
             ).sort(sort_field, sort_direction).skip(skip).limit(resultados_por_pagina))
             
             # Convertir ObjectId a string para serialización y almacenamiento en caché
@@ -446,6 +447,16 @@ def obtener_documento(id):
             nuevo_tema = datos.get('tema', '').strip()
             es_publico = datos.get('es_publico')
 
+            # Metadatos adicionales: Vigencia (selector) y Fecha de publicación (normalizada)
+            vigencia_nueva = datos.get('vigencia')
+            if vigencia_nueva is not None:
+                vigencia_nueva = str(vigencia_nueva).strip()
+                if vigencia_nueva not in VIGENCIA_OPCIONES:
+                    vigencia_nueva = VIGENCIA_DEFECTO
+            fecha_pub_nueva = datos.get('fecha_publicacion')
+            if fecha_pub_nueva is not None:
+                fecha_pub_nueva = normalizar_fecha_publicacion(fecha_pub_nueva)
+
             if not nuevo_titulo or not nuevo_autor or not nuevo_tema:
                 return jsonify({'error': 'Título, autor y tema son campos obligatorios'}), 400
 
@@ -463,6 +474,11 @@ def obtener_documento(id):
                 'tema': nuevo_tema
             }
             unset_fields = {}
+
+            if vigencia_nueva is not None:
+                update_fields['vigencia'] = vigencia_nueva
+            if fecha_pub_nueva is not None:
+                update_fields['fecha_publicacion'] = fecha_pub_nueva
 
             if es_publico is True:
                 unset_fields['usuario'] = ""
@@ -525,6 +541,8 @@ def obtener_documento(id):
                     'titulo': documento['titulo'],
                     'autor': documento['autor'],
                     'tema': documento['tema'],
+                    'vigencia': documento.get('vigencia', VIGENCIA_DEFECTO),
+                    'fecha_publicacion': documento.get('fecha_publicacion', ''),
                     'usuario': doc_usuario,
                     'es_publico': doc_usuario is None,
                     'usuarios_compartidos': ', '.join(doc_shared),
@@ -669,6 +687,12 @@ def procesar():
         usuario = request.form.get('usuario', '')
         es_publico = request.form.get('es_publico') == 'true'
 
+        # Metadatos adicionales: Vigencia (selector) y Fecha de publicación (normalizada)
+        vigencia = request.form.get('vigencia', '').strip()
+        if vigencia not in VIGENCIA_OPCIONES:
+            vigencia = VIGENCIA_DEFECTO
+        fecha_publicacion = normalizar_fecha_publicacion(request.form.get('fecha_publicacion', ''))
+
         # Generar ID previo del documento para asociar imágenes
         doc_id = str(ObjectId())
         doc_dir = os.path.join(app.root_path, 'static', 'documentos', doc_id)
@@ -777,6 +801,8 @@ def procesar():
             'autor': autor,
             'tema': tema,
             'texto': texto_extraido,
+            'vigencia': vigencia,
+            'fecha_publicacion': fecha_publicacion,
             'fecha_creacion': datetime.now(timezone.utc)
         }
 

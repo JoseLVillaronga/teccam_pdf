@@ -23,6 +23,8 @@ import re
 import math
 from typing import Optional, List
 
+from metadata_doc import VIGENCIA_DEFECTO
+
 # Cargar variables de entorno desde .env
 load_dotenv()
 
@@ -109,6 +111,8 @@ class DocumentoMetadata(BaseModel):
     palabras: int = Field(..., description="Cantidad estimada de palabras")
     es_publico: bool = Field(..., description="Indica si el documento es público")
     compartido_con_rag: bool = Field(..., description="Indica si fue compartido explícitamente con el usuario RAG")
+    vigencia: str = Field(VIGENCIA_DEFECTO, description="Estado de vigencia del documento")
+    fecha_publicacion: Optional[str] = Field(None, description="Fecha de publicación en formato ISO 8601 (YYYY-MM-DD)")
 
 class DocumentoDetalle(DocumentoMetadata):
     url: Optional[str] = Field(None, description="URL de origen o referencia del archivo")
@@ -138,7 +142,7 @@ class HealthCheckResponse(BaseModel):
     base_datos_conectada: bool
 
 
-def construir_query_rag(tema: Optional[str] = None, desde: Optional[datetime] = None):
+def construir_query_rag(tema: Optional[str] = None, desde: Optional[datetime] = None, vigencia: Optional[str] = None):
     """
     Construye la consulta MongoDB para recuperar únicamente los documentos
     públicos, pertenecientes a RAG_USER o explícitamente compartidos con RAG_USER.
@@ -155,6 +159,9 @@ def construir_query_rag(tema: Optional[str] = None, desde: Optional[datetime] = 
 
     if desde:
         query['fecha_creacion'] = {'$gte': desde}
+
+    if vigencia:
+        query['vigencia'] = vigencia
 
     return query
 
@@ -184,6 +191,7 @@ def health_check():
 def listar_documentos_rag(
     tema: Optional[str] = Query(None, description="Filtrar por tema o dominio de conocimiento"),
     desde: Optional[datetime] = Query(None, description="Filtrar documentos creados desde una fecha/hora específica (ISO 8601 UTC)"),
+    vigencia: Optional[str] = Query(None, description="Filtrar por estado de vigencia (vigente, derogado, parcialmente-vigente, en-proyecto, NA (no aplica))"),
     pagina: int = Query(1, ge=1, description="Número de página"),
     limite: int = Query(50, ge=1, le=1000, description="Cantidad de documentos por página (máx. 1000)")
 ):
@@ -194,7 +202,7 @@ def listar_documentos_rag(
     Ideal para comparar contra la base vectorial y sincronizar cambios nuevos o incrementales.
     """
     try:
-        query = construir_query_rag(tema=tema, desde=desde)
+        query = construir_query_rag(tema=tema, desde=desde, vigencia=vigencia)
         total = collection.count_documents(query)
 
         skip = (pagina - 1) * limite
@@ -202,7 +210,8 @@ def listar_documentos_rag(
             query,
             {
                 'titulo': 1, 'autor': 1, 'tema': 1, 'usuario': 1,
-                'usuarios_compartidos': 1, 'fecha_creacion': 1, 'texto': 1
+                'usuarios_compartidos': 1, 'fecha_creacion': 1, 'texto': 1,
+                'vigencia': 1, 'fecha_publicacion': 1
             }
         ).sort('fecha_creacion', -1).skip(skip).limit(limite)
 
@@ -230,7 +239,9 @@ def listar_documentos_rag(
                 caracteres=len(texto),
                 palabras=len(re.findall(r'\b\w+\b', texto)),
                 es_publico=doc_user is None,
-                compartido_con_rag=(doc_user is not None and doc_user != RAG_USER and RAG_USER in doc_shared)
+                compartido_con_rag=(doc_user is not None and doc_user != RAG_USER and RAG_USER in doc_shared),
+                vigencia=doc.get('vigencia') or VIGENCIA_DEFECTO,
+                fecha_publicacion=doc.get('fecha_publicacion') or None
             ))
 
         total_paginas = max(1, math.ceil(total / limite))
@@ -293,6 +304,8 @@ def obtener_documento_rag(documento_id: str):
             palabras=len(re.findall(r'\b\w+\b', texto)),
             es_publico=doc_user is None,
             compartido_con_rag=(doc_user is not None and doc_user != RAG_USER and RAG_USER in doc_shared),
+            vigencia=doc.get('vigencia') or VIGENCIA_DEFECTO,
+            fecha_publicacion=doc.get('fecha_publicacion') or None,
             url=doc.get('url'),
             texto=texto
         )

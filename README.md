@@ -305,6 +305,10 @@ curl -s -H "X-API-Key: $API_KEY" \
   "http://localhost:5022/api/v1/rag/documentos?tema=Estrategia" | jq .
 ```
 
+> El índice de la API RAG incluye los metadatos `vigencia` y `fecha_publicacion` (ISO 8601).
+> Puede filtrarse por estado de vigencia con `?vigencia=vigente`, `?vigencia=derogado`,
+> `?vigencia=parcialmente-vigente`, `?vigencia=en-proyecto` o `?vigencia=NA (no aplica)`.
+
 #### 4. Sincronización Incremental (Fecha `desde` en UTC)
 ```bash
 curl -s -H "X-API-Key: $API_KEY" \
@@ -374,6 +378,7 @@ curl -s -H "X-API-Key: $API_KEY" \
 - **documentos**: Almacena los documentos procesados
   - Campos estándar: título, autor, tema, texto, fecha_creación
   - Campo opcional 'usuario' para documentos privados
+  - Campos de metadatos adicionales: `vigencia` (valores: `vigente`, `derogado`, `parcialmente-vigente`, `en-proyecto`, `NA (no aplica)`; por defecto `NA (no aplica)`) y `fecha_publicacion` (normalizada a ISO 8601 `YYYY-MM-DD`; por defecto vacía)
 
 - **posiciones_lectura**: Almacena marcadores de posición
   - documento_id: Referencia al documento

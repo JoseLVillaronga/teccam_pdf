@@ -176,6 +176,22 @@
                         <label for="tema" class="form-label">Tema</label>
                         <input type="text" class="form-control" id="tema" name="tema" required
                                placeholder="Tema del documento">
+                    <div class="mb-3">
+                        <label for="vigencia" class="form-label">Vigencia</label>
+                        <select class="form-select" id="vigencia" name="vigencia">
+                            <option value="vigente">Vigente</option>
+                            <option value="derogado">Derogado</option>
+                            <option value="parcialmente-vigente">Parcialmente vigente</option>
+                            <option value="en-proyecto">En proyecto</option>
+                            <option value="NA (no aplica)" selected>NA (no aplica)</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="fecha_publicacion" class="form-label">Fecha de publicación</label>
+                        <input type="text" class="form-control" id="fecha_publicacion" name="fecha_publicacion"
+                               placeholder="Ej: 2020-03-15, 15/03/2020, marzo 2020">
+                        <div class="form-text">Se normaliza automáticamente a formato ISO (YYYY-MM-DD) al guardar.</div>
                     </div>
 
                     {% if usuario %}

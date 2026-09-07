@@ -132,7 +132,7 @@
                             </label>
                             <input type="radio" class="btn-check" name="modo_entrada" id="modoArchivo" value="archivo">
                             <label class="btn btn-outline-primary" for="modoArchivo">
-                                <i class="fas fa-file-pdf"></i> Archivo PDF
+                                <i class="fas fa-file-alt"></i> Archivo (PDF / Markdown)
                             </label>
                         </div>
                     </div>
@@ -142,22 +142,23 @@
                         <select class="form-select" id="motor" name="motor">
                             <option value="default" selected>Básico (PyMuPDF/HTML)</option>
                             <option value="docling">Docling (OCR + estructura)</option>
+                            <option value="markdown">Markdown Puro</option>
                         </select>
-                        <div class="form-text">Docling ofrece mayor precisión en documentos escaneados y tablas complejas.</div>
+                        <div class="form-text">Básico: PyMuPDF para PDF / HTML. Docling: OCR + tablas. Markdown Puro: Lectura directa sin conversión.</div>
                     </div>
 
                     <div class="mb-3" id="urlGroup">
                         <label for="url" class="form-label">URL del documento</label>
                         <input type="url" class="form-control" id="url" name="url" 
                                value="{{ url }}" placeholder="https://ejemplo.com/documento.pdf">
-                        <div class="form-text">Ingrese la URL de un documento PDF o página web</div>
+                        <div class="form-text">Ingrese la URL de un documento PDF, página web o archivo Markdown</div>
                     </div>
 
                     <div class="mb-3" id="archivoGroup" style="display: none;">
-                        <label for="archivo_pdf" class="form-label">Archivo PDF</label>
+                        <label for="archivo_pdf" class="form-label">Archivo PDF o Markdown</label>
                         <input type="file" class="form-control" id="archivo_pdf" name="archivo_pdf" 
-                               accept=".pdf,application/pdf">
-                        <div class="form-text">Seleccione un archivo PDF de su computadora</div>
+                               accept=".pdf,.md,.markdown,.txt,application/pdf,text/markdown,text/plain">
+                        <div class="form-text">Seleccione un archivo PDF o Markdown (.md) de su computadora</div>
                     </div>
 
                     <div class="mb-3">
@@ -176,6 +177,8 @@
                         <label for="tema" class="form-label">Tema</label>
                         <input type="text" class="form-control" id="tema" name="tema" required
                                placeholder="Tema del documento">
+                    </div>
+
                     <div class="mb-3">
                         <label for="vigencia" class="form-label">Vigencia</label>
                         <select class="form-select" id="vigencia" name="vigencia">
@@ -258,13 +261,15 @@
             if (modoArchivo.checked) {
                 if (!archivoInput.files || archivoInput.files.length === 0) {
                     alertDiv.className = 'alert alert-danger';
-                    alertDiv.textContent = 'Debe seleccionar un archivo PDF';
+                    alertDiv.textContent = 'Debe seleccionar un archivo (PDF o Markdown)';
                     alertContainer.style.display = 'block';
                     return;
                 }
-                if (!archivoInput.files[0].name.toLowerCase().endsWith('.pdf')) {
+                const fileName = archivoInput.files[0].name.toLowerCase();
+                const exts = ['.pdf', '.md', '.markdown', '.txt'];
+                if (!exts.some(ext => fileName.endsWith(ext))) {
                     alertDiv.className = 'alert alert-danger';
-                    alertDiv.textContent = 'Solo se permiten archivos PDF';
+                    alertDiv.textContent = 'Solo se permiten archivos PDF o Markdown (.md)';
                     alertContainer.style.display = 'block';
                     return;
                 }

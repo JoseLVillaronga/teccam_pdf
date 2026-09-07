@@ -698,18 +698,36 @@ def procesar():
         doc_dir = os.path.join(app.root_path, 'static', 'documentos', doc_id)
         url_base_imagenes = f"/static/documentos/{doc_id}"
 
-        # Motores de extracción: 'default' (PyMuPDF/html2text) o 'docling' (Docling remoto)
+        # Motores de extracción: 'default' (PyMuPDF/html2text), 'docling' (Docling remoto) o 'markdown' (Markdown Puro)
         motor = request.form.get('motor', 'default')
 
         # Verificar si se subió un archivo o se ingresó una URL
         archivo = request.files.get('archivo_pdf')
         url = request.form.get('url', '')
 
-        if archivo and archivo.filename and archivo.filename.lower().endswith('.pdf'):
+        exts_permitidas = ('.pdf', '.md', '.markdown', '.txt')
+
+        if archivo and archivo.filename and archivo.filename.lower().endswith(exts_permitidas):
             archivo_bytes = archivo.read()
             nombre_archivo = archivo.filename
+            nombre_lower = nombre_archivo.lower()
 
-            if motor == 'docling':
+            if motor == 'markdown' or nombre_lower.endswith(('.md', '.markdown', '.txt')):
+                if nombre_lower.endswith('.pdf') and motor == 'markdown':
+                    resultado = extraer_texto_pdf_archivo(
+                        archivo_bytes,
+                        nombre_archivo,
+                        doc_id=doc_id,
+                        imagenes_dir=doc_dir,
+                        url_base_imagenes=url_base_imagenes
+                    )
+                else:
+                    try:
+                        texto_md = archivo_bytes.decode('utf-8')
+                    except UnicodeDecodeError:
+                        texto_md = archivo_bytes.decode('latin-1', errors='replace')
+                    resultado = {'archivo': nombre_archivo, 'texto': texto_md}
+            elif motor == 'docling':
                 # Usar Docling remoto para obtener mejor calidad (OCR + estructura)
                 # Se pasan doc_id/imagenes_dir para extraer imágenes con PyMuPDF
                 # y reemplazar los placeholders <!-- image --> de Docling
@@ -733,7 +751,17 @@ def procesar():
             url_origen = f"archivo_local:{nombre_archivo}"
         elif url:
             # Extraer el texto según el tipo de URL y el motor seleccionado
-            if motor == 'docling':
+            url_lower = url.lower()
+            if motor == 'markdown' or url_lower.endswith(('.md', '.markdown', '.txt')):
+                try:
+                    res_url = requests.get(url, headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    }, timeout=30)
+                    res_url.raise_for_status()
+                    resultado = {'url': url, 'texto': res_url.text}
+                except Exception as e_url:
+                    resultado = {'url': url, 'texto': '', 'error': str(e_url)}
+            elif motor == 'docling':
                 # Docling remoto gestiona PDF y HTML de forma unificada
                 # Se pasan doc_id/imagenes_dir para extraer imágenes con PyMuPDF
                 # y reemplazar los placeholders <!-- image --> de Docling
@@ -761,7 +789,7 @@ def procesar():
         else:
             return jsonify({
                 'status': 'error',
-                'message': 'Debe proporcionar una URL o subir un archivo PDF'
+                'message': 'Debe proporcionar una URL o subir un archivo (PDF o Markdown)'
             }), 400
 
         # Validar que la extracción produjo texto (los extractores devuelven texto
